@@ -1,26 +1,34 @@
-"""This module contains the device controller.
-"""
+"""This module contains the device controller."""
+
 import asyncio
 import logging
-
-from typing import Union, Dict
 from enum import Enum
+
+from pymadoka.connection import Connection, ConnectionException
 from pymadoka.feature import Feature, NotImplementedException
-from pymadoka.connection import Connection, ConnectionException, ConnectionStatus
+from pymadoka.features.clean_filter import CleanFilterIndicator, ResetCleanFilterTimer
 from pymadoka.features.fanspeed import FanSpeed
 from pymadoka.features.operationmode import OperationMode
 from pymadoka.features.power import PowerState
 from pymadoka.features.setpoint import SetPoint
 from pymadoka.features.temperatures import Temperatures
-from pymadoka.features.clean_filter import CleanFilterIndicator,ResetCleanFilterTimer
+
+from .consts import DEFAULT_ADAPTER
 
 logger = logging.getLogger(__name__)
+
+Info = dict[str, str]
+Status = dict[str, int | str | bool | dict | Enum]
+
+DBUS_DELAY = 0.3
 
 
 class Controller:
     """This class implements the device controller.
-    It stores all the features supported by the device and provides methods to operate globally on all the features.
-    However, each feature can be queried/updated independently by accesing the feature attributes.
+    It stores all the features supported by the device and provides methods to operate
+    globally on all the features.
+    However, each feature can be queried/updated independently by accesing the feature
+    attributes.
 
     Attributes:
         status (dict[string,FeatureStatus]): Last status collected from the features
@@ -32,22 +40,21 @@ class Controller:
         set_point (Feature): Feature used to control the fan speed
         clean_filter_indicator (Feature): Feature used to control the fan speed
     """
-    def __init__(self, address: str, adapter: str = "hci0", reconnect: bool = True):
+
+    def __init__(
+        self, address: str, adapter: str = DEFAULT_ADAPTER, reconnect: bool = True
+    ):
         """Inits the controller with the device address.
 
         Args:
-            address (str): MAC address of the device  
+            address (str): MAC address of the device
             adapter (str): Bluetooth adapter for the connection
         """
 
-     
-        if adapter is None:
-            adapter = "hci0"
-        
-        self.status = {}
-        self.info = {}
-        self.connection = Connection(address,adapter = adapter, reconnect=reconnect)
-        
+        self.status: Status = {}
+        self.info: Info = {}
+        self.connection = Connection(address, adapter=adapter, reconnect=reconnect)
+
         self.fan_speed = FanSpeed(self.connection)
         self.operation_mode = OperationMode(self.connection)
         self.power_state = PowerState(self.connection)
@@ -55,32 +62,27 @@ class Controller:
         self.temperatures = Temperatures(self.connection)
         self.clean_filter_indicator = CleanFilterIndicator(self.connection)
         self.reset_clean_filter_timer = ResetCleanFilterTimer(self.connection)
-        
 
-    async def start(self):
-        """Start the connection to the device.
-        """        
+    async def start(self) -> None:
+        """Start the connection to the device."""
         await self.connection.start()
-       
-    
-    async def stop(self):
-        """Stop the connection.
-        """ 
+
+    async def stop(self) -> None:
+        """Stop the connection."""
         await self.connection.cleanup()
-    
-    async def update(self):
-        """Iterate over all the features and query their status.
-        """ 
-        
+
+    async def update(self) -> None:
+        """Iterate over all the features and query their status."""
+
         for var in vars(self).values():
-            if isinstance(var,Feature): 
+            if isinstance(var, Feature):
                 try:
                     # Small delay to avoid DBUS errors produced when calls are too quick
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(DBUS_DELAY)
                     await var.query()
                 except NotImplementedException as e:
                     if not isinstance(var, ResetCleanFilterTimer):
-                        raise e                 
+                        raise e
                 except ConnectionAbortedError as e:
                     logger.debug(f"Connection aborted: {str(e)}")
                     raise e
@@ -89,31 +91,28 @@ class Controller:
                     raise e
                 except Exception as e:
                     logger.error(f"Failed to update {var.__class__.__name__}: {str(e)}")
-        
-    
-    def refresh_status(self) -> Dict[str,Union[int,str,bool,dict,Enum]]:
-        """Collect the status from all the features into a single status dictionary with basic types.
+
+    def refresh_status(self) -> Status:
+        """Collect the status from all the features into a single status dictionary with
+        basic types.
 
         Returns:
-            dict[str,Union[int,str,bool,dict,Enum]]: Dictionary with the status of each feature represented with basic types
+            dict[str, int | str | bool | dict | Enum]: Dictionary with the status of
+            each feature represented with basic types
         """
-        for k,v in vars(self).items():
-            if isinstance(v,Feature): 
+        for k, v in vars(self).items():
+            if isinstance(v, Feature):
                 if v.status is not None:
                     self.status[k] = vars(v.status)
-            
+
         return self.status
 
-    
-    async def read_info(self) -> Dict[str,str]:
-        """Reads the device info (Hardware revision, Software revision, Model, Manufacturer, etc)
+    async def read_info(self) -> Info:
+        """Reads the device info (Hardware revision, Software revision, Model,
+        Manufacturer, etc)
+
         Returns:
-            Dict[str,str]: Dictionary with the device info
+            dict[str, str]: Dictionary with the device info
         """
         self.info = await self.connection.read_info()
         return self.info
-       
-
-
-
-    
