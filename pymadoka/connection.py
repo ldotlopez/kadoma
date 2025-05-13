@@ -8,12 +8,14 @@ import logging
 import subprocess
 import sys
 from enum import Enum
+import time
 
 from bleak import BleakClient,BleakScanner,discover
+from bleak.backends.characteristic import BleakGATTCharacteristic
 from typing import Dict
 
 from pymadoka.transport import Transport, TransportDelegate
-from pymadoka.consts import NOTIFY_CHAR_UUID, WRITE_CHAR_UUID, SEND_MAX_TRIES
+from pymadoka.consts import NOTIFY_CHAR_UUID, WRITE_CHAR_UUID, SEND_MAX_TRIES, DEFAULT_ADAPTER
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,7 @@ class ConnectionStatus(Enum):
 
 DISCOVERED_DEVICES_CACHE = []
 
-async def discover_devices(timeout=5,adapter="hci0", force_disconnect = True):
+async def discover_devices(timeout=5, adapter=DEFAULT_ADAPTER, force_disconnect=True):
     """Trigger a bluetooth devices discovery on the adapter for the timeout interval.
     
     This method must be called before any connection attempt.
@@ -114,92 +116,110 @@ class Connection(TransportDelegate):
         self.adapter = adapter
         self.address = address
         self.name = self.address
-        self.connection_status = ConnectionStatus.DISCONNECTED
+        # self.connection_status = ConnectionStatus.DISCONNECTED
         self.last_info = None
         self.transport = Transport(self)
         self.current_future = None
         self.requests = {}
-        
+        self.client = BleakClient(address, disconnected_callback=self.on_disconnect)
+
     def on_disconnect(self, client: BleakClient):
-        self.connection_status = ConnectionStatus.DISCONNECTED
-        # Put code here to handle what happens on disconnet.
-        logger.info(f"Disconnected {self.address}!")
-        asyncio.create_task(self.start())
-        
+        logger.info(f"device {self.address} disconnected!")
+        # self.connection_status = ConnectionStatus.DISCONNECTED
+        # # Put code here to handle what happens on disconnet.
+        # logger.info(f"Disconnected {self.address}!")
+        # asyncio.create_task(self.start())
+
     async def cleanup(self):
         if self.client:
             await self.client.stop_notify(NOTIFY_CHAR_UUID)
             await self.client.disconnect()
-        self.connection_status = ConnectionStatus.DISCONNECTED
+        # self.connection_status = ConnectionStatus.DISCONNECTED
 
-    async def start(self):
-        """Starts the connection.
-        
-        Firstly, the device has to be registered in the Bluez Service so it becomes available via DBUS, so a device scan has to be performed.
-        Once the devices are found, the client is registered and connected to the device that matches the device address.
+    async def start(self, timeout: float = 5.0):
+        start = time.monotonic()
 
-        However, if the device is already connected, it requires to be disconnected so it can be found during the scan, as the device is not listed otherwise.
-
-        Args:
-            address (str): MAC address of the device
-            force_disconnect (bool): Force a hard disconnect of the device. The device is usually disconnected to ensure a better communication (default True)
-            device_discovery_timeout(int): Timeout used for the device discovery (default 5s)
-        """
-        logger.debug(F"Starting connection manager on {self.address}")
-        self.connection_status = ConnectionStatus.CONNECTING
-        while (not self.connection_status == ConnectionStatus.CONNECTED and 
-               not self.connection_status == ConnectionStatus.ABORTED):
-            try:
-                if self.client:
-                    await self._connect()
-                else:
-                    await self._select_device()
-                await asyncio.sleep(2.0)       
-            except ConnectionAbortedError as e:
-                self.connection_status = ConnectionStatus.ABORTED
-            except CancelledError as e:
-                logger.error(str(e))  
-            except Exception as e:
-                self.connection_status = ConnectionStatus.ABORTED
-    async def _connect(self):
-        try:
-            connected = self.client.is_connected
-            if not connected:
-                await self.client.connect()
-                connected = self.client.is_connected
-                
-            if connected:
-                logger.info(F"Connected to {self.address}")
-                # self.client.set_disconnected_callback(self.on_disconnect)
-                self.connection_status = ConnectionStatus.CONNECTED
-                await self.client.start_notify(
-                    NOTIFY_CHAR_UUID, self.notification_handler,
-                )
-            else:
-                logger.info(f"Failed to connect to {self.address}")
-                
-        except Exception as e:
-            if not "Software caused connection abort" in str(e):
-                logger.error(e)
-            if not self.reconnect:
-                raise e
-            logger.debug("Reconnecting...")
-
-    async def _select_device(self):
-        """Scan bluetooth devices searching for the thermostat address so it is registered in the DBUS and available to the client.
-        """
-        logger.debug("Bluetooh LE hardware warming up...")
-    
-        for d in DISCOVERED_DEVICES_CACHE:
-            if d.address.upper() == self.address.upper(): 
-                self.client = BleakClient(d, adapter = self.adapter, disconnected_callback=self.on_disconnect)
-                self.name = d.name
+        while not self.client.is_connected and time.monotonic() - start <= timeout:
+            await self.client.connect()
+            if self.client.is_connected:
                 break
-        if self.client == None:
-            self.connection_status = ConnectionStatus.ABORTED
-            raise ConnectionAbortedError(f"Could not find bluetooth device for the address {self.address}. Please follow the instructions on device pairing.")
 
-    def notification_handler(self, sender: str, data: bytearray):
+        if not self.client.is_connected:
+            raise ConnectionError()
+
+        await self.client.start_notify(
+            NOTIFY_CHAR_UUID, self.notification_handler,
+        )
+
+    # async def start(self):
+    #     """Starts the connection.
+
+    #     Firstly, the device has to be registered in the Bluez Service so it becomes available via DBUS, so a device scan has to be performed.
+    #     Once the devices are found, the client is registered and connected to the device that matches the device address.
+
+    #     However, if the device is already connected, it requires to be disconnected so it can be found during the scan, as the device is not listed otherwise.
+
+    #     Args:
+    #         address (str): MAC address of the device
+    #         force_disconnect (bool): Force a hard disconnect of the device. The device is usually disconnected to ensure a better communication (default True)
+    #         device_discovery_timeout(int): Timeout used for the device discovery (default 5s)
+    #     """
+    #     logger.debug(F"Starting connection manager on {self.address}")
+    #     self.connection_status = ConnectionStatus.CONNECTING
+    #     while (not self.connection_status == ConnectionStatus.CONNECTED and
+    #            not self.connection_status == ConnectionStatus.ABORTED):
+    #         try:
+    #             if self.client:
+    #                 await
+    #                 ct()
+    #             else:
+    #                 await self._select_device()
+    #             await asyncio.sleep(2.0)
+    #         except ConnectionAbortedError as e:
+    #             self.connection_status = ConnectionStatus.ABORTED
+    #         except CancelledError as e:
+    #             logger.error(str(e))
+    #         except Exception as e:
+    #             self.connection_status = ConnectionStatus.ABORTED
+
+    # async def _connect(self):
+    #     try:
+    #         connected = self.client.is_connected
+    #         if not connected:
+    #             await self.client.connect()
+    #             connected = self.client.is_connected
+
+    #         if connected:
+    #             logger.info(F"Connected to {self.address}")
+    #             # self.client.set_disconnected_callback(self.on_disconnect)
+    #             self.connection_status = ConnectionStatus.CONNECTED
+    #             await self.client.start_notify(
+    #                 NOTIFY_CHAR_UUID, self.notification_handler,
+    #             )
+    #         else:
+    #             logger.info(f"Failed to connect to {self.address}")
+
+    #     except Exception as e:
+    #         if not "Software caused connection abort" in str(e):
+    #             logger.error(e)
+    #         if not self.reconnect:
+    #             raise e
+    #         logger.debug("Reconnecting...")
+
+    # async def _select_device(self):
+    #     """Scan bluetooth devices searching for the thermostat address so it is registered in the DBUS and available to the client.
+    #     """
+    #     logger.debug("Bluetooh LE hardware warming up...")
+
+    #     for d in DISCOVERED_DEVICES_CACHE:
+    #         if d.address.upper() == self.address.upper():
+    #             self.client = BleakClient(d, adapter = self.adapter, disconnected_callback=self.on_disconnect)
+    #             self.name = d.name
+    #             break
+    #     if self.client == None:
+    #         self.connection_status = ConnectionStatus.ABORTED
+    #         raise ConnectionAbortedError(f"Could not find bluetooth device for the address {self.address}. Please follow the instructions on device pairing.")
+    def notification_handler(self, characteristic: BleakGATTCharacteristic, data: bytearray):
         """This callback is used to receive the data read from the device (chunks) and attempt to rebuild the message.
         
         Args:
@@ -231,7 +251,8 @@ class Connection(TransportDelegate):
 
         self.requests[cmd_id].append(cmd_response)
 
-        if self.connection_status is not ConnectionStatus.CONNECTED:
+        # if self.connection_status is not ConnectionStatus.CONNECTED:
+        if not self.client.is_connected:
             cmd_response.cancel()
             return cmd_response
     
@@ -249,7 +270,8 @@ class Connection(TransportDelegate):
         for chunknum,chunk in enumerate(chunks):
             for i in range(0,SEND_MAX_TRIES):
                 try:
-                    if self.connection_status is not ConnectionStatus.CONNECTED:
+                    # if self.connection_status is not ConnectionStatus.CONNECTED:
+                    if not self.client.is_connected:
                         cmd_response.cancel()
                         return cmd_response
                    
@@ -264,7 +286,8 @@ class Connection(TransportDelegate):
                     logger.debug(F"Send command failed. Retrying ({i}/{SEND_MAX_TRIES}) for chunk #{chunknum} : {str(e)}")
                     await asyncio.sleep(1)    
 
-        if sent != len(chunks) and self.connection_status == ConnectionStatus.CONNECTED:
+        # if sent != len(chunks) and self.connection_status == ConnectionStatus.CONNECTED:
+        if sent != len(chunks) and self.client.is_connected:
             raise ConnectionException("Command chunks could not be sent")
 
         return cmd_response
@@ -318,9 +341,10 @@ class Connection(TransportDelegate):
         """
         try:
             if self.last_info:
-                 return self.last_info
-            
-            if self.connection_status is not  ConnectionStatus.CONNECTED:
+                return self.last_info
+
+            # if self.connection_status is not ConnectionStatus.CONNECTED:
+            if not self.client.is_connected:
                 return {}
 
             values = {}

@@ -1,3 +1,4 @@
+import logging
 from .controller import Controller
 from .connection import Connection, discover_devices, force_device_disconnect
 from .connection import ConnectionException
@@ -9,3 +10,9 @@ from .features.power import PowerState, PowerStateStatus
 from .features.setpoint import SetPoint, SetPointStatus
 from .features.temperatures import Temperatures, TemperaturesStatus
 from .cli import cli
+from .consts import NAME
+
+logging.basicConfig()
+
+LOGGER = logging.getLogger(NAME)
+LOGGER.setLevel(logging.DEBUG)
