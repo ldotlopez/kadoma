@@ -74,6 +74,18 @@ class Controller:
         self.clean_filter_indicator = CleanFilterIndicator(self.connection)
         self.reset_clean_filter_timer = ResetCleanFilterTimer(self.connection)
 
+    @property
+    def features(self) -> dict[FeatureType, Feature]:
+        return {
+            FeatureType.CLEAN_FILTER_INDICATOR: self.clean_filter_indicator,
+            FeatureType.FAN_SPEED: self.fan_speed,
+            FeatureType.OPERATION_MODE: self.operation_mode,
+            FeatureType.POWER_STATE: self.power_state,
+            FeatureType.RESET_CLEAN_FILTER_TIMER: self.reset_clean_filter_timer,
+            FeatureType.SET_POINT: self.set_point,
+            FeatureType.TEMPERATURES: self.temperatures,
+        }
+
     async def start(self) -> None:
         """Start the connection to the device."""
         await self.connection.start()
@@ -82,39 +94,58 @@ class Controller:
         """Stop the connection."""
         await self.connection.cleanup()
 
-    async def update(self) -> None:
-        """Iterate over all the features and query their status."""
+    # async def update(self) -> None:
+    #     """Iterate over all the features and query their status."""
+    #
+    #     for var in vars(self).values():
+    #         if isinstance(var, Feature):
+    #             try:
+    #                 # Small delay to avoid DBUS errors produced when calls are too quick
+    #                 await asyncio.sleep(DBUS_DELAY)
+    #                 await var.query()
+    #             except NotImplementedException as e:
+    #                 if not isinstance(var, ResetCleanFilterTimer):
+    #                     raise e
+    #             except ConnectionAbortedError as e:
+    #                 logger.debug(f"Connection aborted: {str(e)}")
+    #                 raise e
+    #             except ConnectionException as e:
+    #                 logger.debug(f"Connection error: {str(e)}")
+    #                 raise e
+    #             except Exception as e:
+    #                 logger.error(f"Failed to update {var.__class__.__name__}: {str(e)}")
 
-        for var in vars(self).values():
-            if isinstance(var, Feature):
-                try:
-                    # Small delay to avoid DBUS errors produced when calls are too quick
-                    await asyncio.sleep(DBUS_DELAY)
-                    await var.query()
-                except NotImplementedException as e:
-                    if not isinstance(var, ResetCleanFilterTimer):
-                        raise e
-                except ConnectionAbortedError as e:
-                    logger.debug(f"Connection aborted: {str(e)}")
-                    raise e
-                except ConnectionException as e:
-                    logger.debug(f"Connection error: {str(e)}")
-                    raise e
-                except Exception as e:
-                    logger.error(f"Failed to update {var.__class__.__name__}: {str(e)}")
+    # def refresh_status(self) -> Status:
+    #     """Collect the status from all the features into a single status dictionary with
+    #     basic types.
+    #
+    #     Returns:
+    #         Status: Dictionary with the status of each feature represented with basic types
+    #     """
+    #     for k, v in vars(self).items():
+    #         if isinstance(v, Feature):
+    #             if v.status is not None:
+    #                 self.status[k] = vars(v.status)
+    #
+    #     return self.status
 
-    def refresh_status(self) -> Status:
-        """Collect the status from all the features into a single status dictionary with
-        basic types.
+    # def get_status(self) -> Status:
+    #     return self.status
 
-        Returns:
-            dict[str, int | str | bool | dict | Enum]: Dictionary with the status of
-            each feature represented with basic types
-        """
-        for k, v in vars(self).items():
-            if isinstance(v, Feature):
-                if v.status is not None:
-                    self.status[k] = vars(v.status)
+    async def refresh_status(self) -> Status:
+        for ft, feat in self.features.items():
+            logger.debug(f"query {ft}")
+            try:
+                res = await feat.query()
+            except feature.NotImplementedException:
+                logger.debug(f"query {ft}: None")
+                res = None
+                continue
+
+            logger.debug(f"query {ft}: {res}")
+            await asyncio.sleep(DBUS_DELAY)
+
+            self.status[ft] = res
 
         return self.status
 
