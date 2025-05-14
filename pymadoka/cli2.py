@@ -87,7 +87,7 @@ class CommonOptions:
     "--adapter",
     required=False,
     type=str,
-    default="hci0",
+    default=DEFAULT_BLUETOOTH_ADAPTER,
     show_default=True,
     help="Name of the Bluetooth adapter to be used for the connection",
 )
@@ -112,8 +112,20 @@ async def discover() -> list[BLEDevice]:
 
 
 @contextlib.asynccontextmanager
-async def get_controller_ctx(opts: CommonOptions) -> AsyncIterator[Controller]:
-    madoka = Controller(address=opts.address, adapter=opts.adapter, reconnect=True)
+async def get_controller_ctx_from_options(
+    opts: CommonOptions,
+) -> AsyncIterator[Controller]:
+    async with get_controller_ctx(
+        address=opts.address, adapter=opts.adapter
+    ) as controller:
+        yield controller
+
+
+@contextlib.asynccontextmanager
+async def get_controller_ctx(
+    address: str, adapter: str = DEFAULT_BLUETOOTH_ADAPTER
+) -> AsyncIterator[Controller]:
+    madoka = Controller(address=address, adapter=adapter, reconnect=True)
 
     LOGGER.debug("connecting...")
     for _ in range(3):
@@ -152,7 +164,7 @@ async def get_controller_ctx(opts: CommonOptions) -> AsyncIterator[Controller]:
 async def monitor(ctx: click.Context):
     last_update = 0.0
 
-    async with get_controller_ctx(ctx.obj) as madoka:
+    async with get_controller_ctx_from_options(ctx.obj) as madoka:
         print(f"client is: {madoka.connection.client}")
         while True:
             now = time.monotonic()
@@ -169,13 +181,13 @@ async def monitor(ctx: click.Context):
 @click.pass_context
 @click_async_wrapper
 async def get_status(ctx: click.Context):
-    async with get_controller_ctx(ctx.obj) as madoka:
+    async with get_controller_ctx_from_options(ctx.obj) as madoka:
         status = await madoka.refresh_status()
         pprint(dump_status(status))
 
 
 async def _query_feature(ctx: click.Context, feat_type: FeatureType) -> FeatureStatus:
-    async with get_controller_ctx(ctx.obj) as madoka:
+    async with get_controller_ctx_from_options(ctx.obj) as madoka:
         print(f"client is: {madoka.connection.client}")
         resp = await madoka.features[feat_type].query()
         return resp
@@ -184,7 +196,7 @@ async def _query_feature(ctx: click.Context, feat_type: FeatureType) -> FeatureS
 async def _update_feature(
     ctx: click.Context, feat_type: FeatureType, status: FeatureStatus
 ) -> FeatureStatus:
-    async with get_controller_ctx(ctx.obj) as madoka:
+    async with get_controller_ctx_from_options(ctx.obj) as madoka:
         resp = await madoka.features[feat_type].update(status)
         return resp
 
@@ -338,9 +350,3 @@ async def reset_clean_filter_timer(ctx: click.Context):
         ctx, FeatureType.RESET_CLEAN_FILTER_TIMER, ResetCleanFilterTimerStatus()
     )
     pprint(resp.as_primitive())
-
-
-if __name__ == "__main__":
-    import sys
-
-    sys.exit(main())
