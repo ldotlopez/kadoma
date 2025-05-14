@@ -9,7 +9,7 @@ from .features.operationmode import OperationMode, OperationModeStatus, Operatio
 from .features.power import PowerState, PowerStateStatus
 from .features.setpoint import SetPoint, SetPointStatus
 from .features.temperatures import Temperatures, TemperaturesStatus
-from .cli import cli
+from .cli2 import cli
 from .consts import NAME
 
 logging.basicConfig()
