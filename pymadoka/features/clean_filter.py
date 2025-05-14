@@ -2,7 +2,7 @@
 """
 
 from typing import Dict
-from pymadoka.feature import Feature, FeatureStatus, NotImplementedException
+from pymadoka.feature import Feature, FeatureStatus, NotImplementedException, Primitive
 from pymadoka.connection import Connection
 
 class ResetCleanFilterTimerStatus(FeatureStatus):
@@ -22,6 +22,9 @@ class ResetCleanFilterTimerStatus(FeatureStatus):
         values[self.CLEAN_FILTER_TIMER_RESET_IDX] = bytes([0x01])
        
         return values
+
+    def as_primitive(self):
+        return None
 
 
 class ResetCleanFilterTimer(Feature):

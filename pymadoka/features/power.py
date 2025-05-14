@@ -2,7 +2,7 @@
 """
 
 from typing import Dict
-from pymadoka.feature import Feature, FeatureStatus
+from pymadoka.feature import Feature, FeatureStatus, Primitive
 from pymadoka.connection import Connection
 
 class PowerStateStatus(FeatureStatus):
@@ -34,6 +34,10 @@ class PowerStateStatus(FeatureStatus):
         values = {}
         values[self.DATA_IDX] = bytes([0x01]) if self.turn_on else bytes([0x00])
         return values
+
+    def as_primitive(self) -> Primitive:
+        return self.turn_on
+
 
 class PowerState(Feature):
 

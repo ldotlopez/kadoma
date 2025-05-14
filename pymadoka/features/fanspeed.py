@@ -3,7 +3,7 @@
 
 from enum import Enum
 from typing import Dict
-from pymadoka.feature import Feature, FeatureStatus
+from pymadoka.feature import Feature, FeatureStatus, Primitive
 from pymadoka.connection import Connection
 
 class FanSpeedEnum(Enum):
@@ -11,8 +11,6 @@ class FanSpeedEnum(Enum):
     MID = 3
     LOW = 1
     AUTO = 0
-    def __str__(self):
-        return self.name
 
 class FanSpeedStatus(FeatureStatus):
 
@@ -59,6 +57,13 @@ class FanSpeedStatus(FeatureStatus):
         values[self.COOLING_IDX] = self.cooling_fan_speed.value.to_bytes(1,"big")
         values[self.HEATING_IDX] = self.heating_fan_speed.value.to_bytes(1,"big")
         return values
+
+    def as_primitive(self) -> Primitive:
+        return {
+            'cooling_fan_speed': self.cooling_fan_speed.name,
+            'heating_fan_speed': self.cooling_fan_speed.name
+        }
+
 
 class FanSpeed(Feature):
     """

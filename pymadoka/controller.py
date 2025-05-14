@@ -5,7 +5,7 @@ import logging
 from enum import Enum
 
 from pymadoka.connection import Connection, ConnectionException
-from pymadoka.feature import Feature, NotImplementedException
+from pymadoka.feature import Feature, NotImplementedException, FeatureStatus
 from pymadoka.features.clean_filter import CleanFilterIndicator, ResetCleanFilterTimer
 from pymadoka.features.fanspeed import FanSpeed
 from pymadoka.features.operationmode import OperationMode
@@ -18,7 +18,7 @@ from .consts import DEFAULT_BLUETOOTH_ADAPTER
 logger = logging.getLogger(__name__)
 
 Info = dict[str, str]
-Status = dict[str, int | str | bool | dict | Enum]
+Status = dict[str, FeatureStatus | None]
 
 DBUS_DELAY = 0.3
 
@@ -51,7 +51,7 @@ class Controller:
             adapter (str): Bluetooth adapter for the connection
         """
 
-        self.status: Status = {}
+        self.status: Status = Status()
         self.info: Info = {}
         self.connection = Connection(address, adapter=adapter, reconnect=reconnect)
 

@@ -2,7 +2,7 @@
 """
 from enum import Enum
 from typing import Dict
-from pymadoka.feature import Feature, FeatureStatus
+from pymadoka.feature import Feature, FeatureStatus, Primitive
 from pymadoka.connection import Connection
 
 class OperationModeEnum(Enum):
@@ -12,8 +12,6 @@ class OperationModeEnum(Enum):
      COOL = 3
      HEAT = 4
      VENTILATION = 5
-     def __str__(self):
-        return self.name
 
 
 class OperationModeStatus(FeatureStatus):
@@ -45,6 +43,10 @@ class OperationModeStatus(FeatureStatus):
         values = {}
         values[self.DATA_IDX] = self.operation_mode.value.to_bytes(1,"big")
         return values
+
+    def as_primitive(self) -> Primitive:
+        return self.operation_mode.name
+
 
 class OperationMode(Feature):
     """

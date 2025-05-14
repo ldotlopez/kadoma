@@ -2,7 +2,7 @@
 """
 
 from typing import Dict
-from pymadoka.feature import Feature, FeatureStatus, NotImplementedException
+from pymadoka.feature import Feature, FeatureStatus, NotImplementedException, Primitive
 from pymadoka.connection import Connection
 
 class TemperaturesStatus(FeatureStatus):
@@ -42,6 +42,13 @@ class TemperaturesStatus(FeatureStatus):
         if self.outdoor is not None:
             values[self.OUTDOOR_IDX] = (self.outdoor*128).to_bytes(2,"big")
         return values
+
+    def as_primitive(self) -> Primitive:
+        return {
+            'indoor': self.indoor,
+            'outdoot': self.outdoor
+        }
+
 
 class Temperatures(Feature):
 

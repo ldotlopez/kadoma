@@ -12,6 +12,10 @@ from pymadoka.connection import Connection, ConnectionException, ConnectionStatu
 
 logger = logging.getLogger(__name__)
 
+
+Primitive = None | bool | int | float | str | dict | list
+
+
 class ParseException(Exception):
      pass
 
@@ -110,7 +114,10 @@ class FeatureStatus(ABC):
             out = bytearray([0x00,0x00])
 
         return out
-            
+
+    def to_primitive(self) -> Primitive:
+        raise NotImplementedError()
+
 
 class Feature(ABC):
     """

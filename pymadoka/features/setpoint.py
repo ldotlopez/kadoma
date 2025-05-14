@@ -2,7 +2,7 @@
 """
 
 from typing import Dict
-from pymadoka.feature import Feature, FeatureStatus
+from pymadoka.feature import Feature, FeatureStatus, Primitive
 from pymadoka.connection import Connection
 
 class SetPointStatus(FeatureStatus):
@@ -104,6 +104,28 @@ class SetPointStatus(FeatureStatus):
         values[self.COOLING_UPPERLIMIT_SYMBOL_IDX[0]] = (0).to_bytes(self.COOLING_UPPERLIMIT_SYMBOL_IDX[1],"big")
         values[self.HEATING_UPPERLIMIT_SYMBOL_IDX[0]] = (0).to_bytes(self.HEATING_UPPERLIMIT_SYMBOL_IDX[1],"big")
         return values
+
+    def as_primitive(self) -> Primitive:
+        return {
+            "cooling_set_point": self.cooling_set_point,
+            "heating_set_point": self.heating_set_point,
+            "range_enabled": self.range_enabled,
+            "mode": self.mode,
+            "min_differential": self.min_differential,
+            "min_cooling_lowerlimit": self.min_cooling_lowerlimit,
+            "min_heating_lowerlimit": self.min_heating_lowerlimit,
+            "cooling_lowerlimit": self.cooling_lowerlimit,
+            "heating_lowerlimit": self.heating_lowerlimit,
+            "cooling_lowerlimit_symbol": self.cooling_lowerlimit_symbol,
+            "heating_lowerlimit_symbol": self.heating_lowerlimit_symbol,
+            "max_cooling_upperlimit": self.max_cooling_upperlimit,
+            "max_heating_upperlimit": self.max_heating_upperlimit,
+            "cooling_upperlimit": self.cooling_upperlimit,
+            "heating_upperlimit": self.heating_upperlimit,
+            "cooling_upperlimit_symbol": self.cooling_upperlimit_symbol,
+            "heating_upperlimit_symbol": self.heating_upperlimit_symbol,
+        }
+
 
 class SetPoint(Feature):
     """
