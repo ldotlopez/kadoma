@@ -115,7 +115,7 @@ class FeatureStatus(ABC):
 
         return out
 
-    def to_primitive(self) -> Primitive:
+    def as_primitive(self) -> Primitive:
         raise NotImplementedError()
 
 

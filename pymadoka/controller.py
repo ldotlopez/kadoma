@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from enum import Enum
+import enum
 
 from pymadoka.connection import Connection, ConnectionException
 from pymadoka.feature import Feature, NotImplementedException
@@ -19,8 +19,19 @@ from .consts import DEFAULT_BLUETOOTH_ADAPTER, DBUS_DELAY
 
 logger = logging.getLogger(__name__)
 
+
+class FeatureType(enum.Enum):
+    CLEAN_FILTER_INDICATOR = "clean_filter_indicator"
+    FAN_SPEED = "fan_speed"
+    OPERATION_MODE = "operation_mode"
+    POWER_STATE = "power_state"
+    RESET_CLEAN_FILTER_TIMER = "reset_clean_filter_timer"
+    SET_POINT = "set_point"
+    TEMPERATURES = "temperatures"
+
+
 Info = dict[str, str]
-Status = dict[str, FeatureStatus | None]
+Status = dict[FeatureType, FeatureStatus | None]
 
 
 class Controller:
