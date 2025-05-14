@@ -15,7 +15,7 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from typing import Dict
 
 from pymadoka.transport import Transport, TransportDelegate
-from pymadoka.consts import NOTIFY_CHAR_UUID, WRITE_CHAR_UUID, SEND_MAX_TRIES, DEFAULT_ADAPTER
+from pymadoka.consts import NOTIFY_CHAR_UUID, WRITE_CHAR_UUID, SEND_MAX_TRIES, DEFAULT_BLUETOOTH_ADAPTER
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class ConnectionStatus(Enum):
 
 DISCOVERED_DEVICES_CACHE = []
 
-async def discover_devices(timeout=5, adapter=DEFAULT_ADAPTER, force_disconnect=True):
+async def discover_devices(timeout=5, adapter=DEFAULT_BLUETOOTH_ADAPTER, force_disconnect=True):
     """Trigger a bluetooth devices discovery on the adapter for the timeout interval.
     
     This method must be called before any connection attempt.

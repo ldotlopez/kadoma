@@ -13,7 +13,7 @@ from pymadoka.features.power import PowerState
 from pymadoka.features.setpoint import SetPoint
 from pymadoka.features.temperatures import Temperatures
 
-from .consts import DEFAULT_ADAPTER
+from .consts import DEFAULT_BLUETOOTH_ADAPTER
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class Controller:
     """
 
     def __init__(
-        self, address: str, adapter: str = DEFAULT_ADAPTER, reconnect: bool = True
+        self, address: str, adapter: str = DEFAULT_BLUETOOTH_ADAPTER, reconnect: bool = False
     ):
         """Inits the controller with the device address.
 
