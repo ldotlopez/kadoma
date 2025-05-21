@@ -1,14 +1,22 @@
 import unittest
 
 from kadoma.knobs import (
-    FanSpeedValue,
-    FanSpeedParams,
+    CleanFilterIndicatorKnob,
+    CleanFilterIndicatorParams,
     FanSpeedKnob,
+    FanSpeedParams,
+    FanSpeedValue,
     Knob,
     KnobParams,
+    OperationModeKnob,
+    OperationModeParams,
+    OperationModeValue,
     PowerStateKnob,
     PowerStateParams,
-    PowerStateValue,
+    SensorsKnob,
+    SensorsParams,
+    SetPointKnob,
+    SetPointParams,
 )
 from kadoma.transport import build_packet, parse_packet
 
@@ -52,12 +60,24 @@ class TestPowerStateKnob(TestKnob):
         )
 
 
-# class TestOperationModeKnob(TestKnob):
-#     KnobCls = OperationModeKnob
-#     KnobParams = OperationModeParams
+class TestOperationModeKnob(TestKnob):
+    KnobCls = OperationModeKnob
+    KnobParams = OperationModeParams
 
-#     # get_operation_mode 07000030200102
-#     # set_operation_mode_cool 07004030200103
+    def test_get_operation_mode_payload(self):
+        self.assertEqual(self.get_query_payload_hex(), "07:00:00:30:20:01:02")
+
+    def test_set_operation_mode_auto_payload(self):
+        self.assertEqual(
+            self.get_update_payload_hex(mode=OperationModeValue.AUTO),
+            "07:00:40:30:20:01:02",
+        )
+
+    def test_set_operation_mode_fan_payload(self):
+        self.assertEqual(
+            self.get_update_payload_hex(mode=OperationModeValue.FAN),
+            "07:00:40:30:20:01:00",
+        )
 
 
 class TestFanSpeedKnob(TestKnob):
@@ -67,7 +87,7 @@ class TestFanSpeedKnob(TestKnob):
     def test_get_fan_speed_payload(self):
         self.assertEqual(self.get_query_payload_hex(), "0a:00:00:50:20:01:00:21:01:00")
 
-    def test_set_fan_speed_payload(self):
+    def test_set_fan_speed_auto_payload(self):
         self.assertEqual(
             self.get_update_payload_hex(
                 cooling=FanSpeedValue.AUTO, heating=FanSpeedValue.AUTO
@@ -75,13 +95,44 @@ class TestFanSpeedKnob(TestKnob):
             "0a:00:40:50:20:01:00:21:01:00",
         )
 
-    def test_set_fan_speed_payload_2(self):
+    def test_set_fan_speed_mixed_payload(self):
         self.assertEqual(
             self.get_update_payload_hex(
                 cooling=FanSpeedValue.HIGH, heating=FanSpeedValue.LOW
             ),
             "0a:00:40:50:20:01:05:21:01:01",
         )
+
+
+class TestSetPointKnob(TestKnob):
+    KnobCls = SetPointKnob
+    KnobParams = SetPointParams
+
+    def test_get_set_point_payload(self):
+        expected = "34:00:00:40:20:01:00:21:01:00:30:01:00:31:01:00:32:01:00:a0:01:00:a1:01:00:a3:01:00:a4:01:00:a5:01:00:b0:01:00:b1:01:00:b2:01:00:b3:01:00:b4:01:00:b5:01:00"  # noqa: E501
+        self.assertEqual(self.get_query_payload_hex(), expected)
+
+    def test_set_set_point_25_payload(self):
+        expected = "36:00:40:40:20:02:0c:80:21:02:0c:80:30:01:00:31:01:00:32:01:00:a0:01:00:a1:01:00:a3:01:00:a4:01:00:a5:01:00:b0:01:00:b1:01:00:b2:01:00:b3:01:00:b4:01:00:b5:01:00"  # noqa: E501
+        self.assertEqual(
+            self.get_update_payload_hex(cooling_set_point=25, heating_set_point=25),
+            expected,
+        )
+
+
+class TestSensorsKnob(TestKnob):
+    KnobCls = SensorsKnob
+    KnobParams = SensorsParams
+
+
+class TestCleanFilterIndicatornob(TestKnob):
+    KnobCls = CleanFilterIndicatorKnob
+    KnobParams = CleanFilterIndicatorParams
+
+    def test_get_set_point_payload(self):
+        expected = "07:00:01:00:62:01:00"
+
+        self.assertEqual(self.get_query_payload_hex(), expected)
 
 
 class TestParsers(unittest.TestCase):
@@ -131,28 +182,6 @@ class TestParsers(unittest.TestCase):
         self.assertEqual(speeds.heating, FanSpeedValue.LOW)
 
 
-# class TestTransport(unittest.TestCase):
-#     def test_chunks(self):
-#         payload = "3d0000402002000021020000300100310102320100a00100a10100a2020000a3020000a40100a50100b00100b10100b2020000b3020000b40100b50100"  # noqa: E501
-#         expected = [
-#             "3d000040200200002102000030010031010232",
-#             "0100a00100a10100a2020000a3020000a40100",
-#             "a50100b00100b10100b2020000b3020000b401",
-#             "00b50100",
-#         ]
-#         transport = Transport()
-#         got = transport.chunkerize(payload)
 
-#         self.assertEqual(got, expected)
-
-
-# Test chunk this
-# 3d0000402002000021020000300100310102320100a00100a10100a2020000a3020000a40100a50100b00100b10100b2020000b3020000b40100b50100
-# into
-
-# DEBUG:pymadoka.connection:CMD 64. payload=003d000040200200002102000030010031010232 Chunk #1/4 sent with size 20 bytes
-# DEBUG:pymadoka.connection:CMD 64. payload=010100a00100a10100a2020000a3020000a40100 Chunk #2/4 sent with size 20 bytes
-# DEBUG:pymadoka.connection:CMD 64. payload=02a50100b00100b10100b2020000b3020000b401 Chunk #3/4 sent with size 20 bytes
-# DEBUG:pymadoka.connection:CMD 64. payload=0300b50100 Chunk #4/4 sent with size 5 bytes
 if __name__ == "__main__":
     unittest.main()

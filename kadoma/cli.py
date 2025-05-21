@@ -10,7 +10,11 @@ import click
 from bleak import BleakClient, BleakScanner
 from kadoma.transport import Transport
 
-from .knobs import FanSpeedKnob, FanSpeedValue, OperationModeValue, PowerStateKnob
+##
+# Power state
+##
+from .knobs import (CleanFilterIndicatorKnob, FanSpeedKnob, FanSpeedValue, OperationModeKnob,
+                    OperationModeValue, PowerStateKnob, SetPointKnob)
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.DEBUG)
@@ -81,10 +85,6 @@ async def set_power_state(address: str, state: str):
             res = await knob.update(state=True if state == "ON" else False)
             print(f"Response data: {res}")
 
-##
-# Power state
-##
-from .knobs import OperationModeKnob
 
 @client.command
 @click.option("--address", "-a", required=True, help="BLE device address")
@@ -139,3 +139,56 @@ async def set_fan_speed(address: str, cooling_speed: str, heating_speed: str):
                 heating=FanSpeedValue[cooling_speed],
             )
             print(f"Response data: {res}")
+
+
+##
+# set point
+##
+@client.command
+@click.option("--address", "-a", required=True, help="BLE device address")
+@click_async_wrapper
+async def get_set_point(address: str):
+    async with BleakClient(address) as client:
+        async with Transport(client) as transport:
+            knob = SetPointKnob(transport)
+            res = await knob.query()
+            print(f"Response data: {res}")
+
+@client.command
+@click.option("--address", "-a", required=True, help="BLE device address")
+@click.argument("cooling", type=int)
+@click.argument("heating", type=int)
+@click_async_wrapper
+async def set_set_point(address: str, cooling: int, heating:int):
+    async with BleakClient(address) as client:
+        async with Transport(client) as transport:
+            knob = SetPointKnob(transport)
+            res = await knob.update(cooling, heating)
+            print(f"Response data: {res}")
+from .knobs import SensorsKnob
+
+##
+# sensors
+##
+@client.command
+@click.option("--address", "-a", required=True, help="BLE device address")
+@click_async_wrapper
+async def get_sensors(address: str):
+    async with BleakClient(address) as client:
+        async with Transport(client) as transport:
+            knob = SensorsKnob(transport)
+            res = await knob.query()
+            print(f"Response data: {res}")
+##
+# clean filter indicator
+##
+@client.command
+@click.option("--address", "-a", required=True, help="BLE device address")
+@click_async_wrapper
+async def get_clean_filter_indicator(address: str):
+    async with BleakClient(address) as client:
+        async with Transport(client) as transport:
+            knob = CleanFilterIndicatorKnob(transport)
+            res = await knob.query()
+            print(f"Response data: {res}")
+
