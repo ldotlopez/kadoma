@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import enum
+from functools import cached_property
 import logging
 from typing import final
+
+import ipdb
 
 from .transport import CommandParams, Transport
 
@@ -15,34 +18,44 @@ LOGGER = logging.getLogger(__name__)
 class Knob:
     QUERY_CMD_ID: int
     UPDATE_CMD_ID: int
-    DATA_KEYS: dict[str, int]
-    DEFAULT_PARAMS: dict[str, int]
+    PARAMETERS: list[tuple[str, int, int]]
 
     def __init__(self, transport: Transport) -> None:
         super().__init__()
         self.transport = transport
 
-    @classmethod
-    def _as_param_list(cls, map: CommandParamMap) -> CommandParams:
-        key_map = cls.DATA_KEYS
+    @cached_property
+    def DEFAULT_PARAMETERS(self) -> CommandParamMap:
+        return {x[0]: x[2] for x in self.PARAMETERS}
+
+    @cached_property
+    def _param_map_str_to_int(self) -> dict[str, int]:
+        return {x[0]: x[1] for x in self.PARAMETERS}
+
+    @cached_property
+    def _param_map_int_to_str(self) -> dict[int, str]:
+        return {x[1]: x[0] for x in self.PARAMETERS}
+
+    def _as_param_list(self, map: CommandParamMap) -> CommandParams:
+        key_map = self._param_map_str_to_int
         return [(key_map[k], v) for k, v in map.items()]
 
-    @classmethod
-    def _as_param_map(cls, params: CommandParams) -> CommandParamMap:
-        key_map = {v: k for k, v in cls.DATA_KEYS.items()}
+    def _as_param_map(self, params: CommandParams) -> CommandParamMap:
+        key_map = self._param_map_int_to_str
         return {key_map[k]: v for k, v in params}
 
     async def _send(self, cmd: int, params: CommandParamMap) -> CommandParamMap:
         _, resp_params = await self.transport.send_command(
             cmd, self._as_param_list(params)
         )
+
         return self._as_param_map(resp_params)
 
     async def _query(self) -> CommandParamMap:
-        return await self._send(self.QUERY_CMD_ID, self.DEFAULT_PARAMS)
+        return await self._send(self.QUERY_CMD_ID, self.DEFAULT_PARAMETERS)
 
     async def _update(self, **kwargs: int) -> CommandParamMap:
-        params = self.DEFAULT_PARAMS | kwargs
+        params = self.DEFAULT_PARAMETERS | kwargs
         resp_params = await self._send(self.UPDATE_CMD_ID, params)
 
         # Little hack to return optimishtic data from device.
@@ -68,8 +81,7 @@ class PowerStateKnob(Knob):
     QUERY_CMD_ID = 32
     UPDATE_CMD_ID = 16416
 
-    DATA_KEYS = {"state": 0x20}
-    DEFAULT_PARAMS = {"state": 0x00}
+    PARAMETERS = [("state", 0x20, 0x00)]
 
     async def query(self) -> bool:
         reply = await self._query()
@@ -99,8 +111,7 @@ class OperationModeKnob(Knob):
     QUERY_CMD_ID = 48
     UPDATE_CMD_ID = 16432
 
-    DATA_KEYS = {"mode": 0x20}
-    DEFAULT_PARAMS = {"mode": OperationModeValue.AUTO.value}
+    PARAMETERS = [("mode", 0x20, OperationModeValue.AUTO.value)]
 
     async def query(self) -> OperationModeValue:
         reply = await self._query()
@@ -129,16 +140,10 @@ class FanSpeedValue(enum.Enum):
 class FanSpeedKnob(Knob):
     QUERY_CMD_ID = 80
     UPDATE_CMD_ID = 16464
-
-    DATA_KEYS = {
-        "cooling": 0x20,
-        "heating": 0x21,
-    }
-
-    DEFAULT_PARAMS = {
-        "cooling": FanSpeedValue.AUTO.value,
-        "heating": FanSpeedValue.AUTO.value,
-    }
+    PARAMETERS = [
+        ("cooling", 0x20, FanSpeedValue.AUTO.value),
+        ("heating", 0x21, FanSpeedValue.AUTO.value),
+    ]
 
     async def query(self) -> tuple[FanSpeedValue, FanSpeedValue]:
         reply = await self._query()
@@ -160,46 +165,25 @@ class FanSpeedKnob(Knob):
 class SetPointKnob(Knob):
     QUERY_CMD_ID = 64
     UPDATE_CMD_ID = 16448
-
-    DATA_KEYS = {
-        "cooling_set_point": 0x20,
-        "heating_set_point": 0x21,
-        "range_enabled": 0x30,
-        "mode": 0x31,
-        "minimum_differential": 0x32,
-        "min_cooling_lowerlimit": 0xA0,
-        "min_heating_lowerlimit": 0xA1,
-        "cooling_lowerlimit": 0xA2,
-        "heating_lowerlimit": 0xA3,
-        "cooling_lowerlimit_symbol": 0xA4,
-        "heating_lowerlimit_symbol": 0xA5,
-        "max_cooling_upperlimit": 0xB0,
-        "max_heating_upperlimit": 0xB1,
-        "cooling_upperlimit": 0xB2,
-        "heating_upperlimit": 0xB3,
-        "cooling_upperlimit_symbol": 0xB4,
-        "heating_upperlimit_symbol": 0xB5,
-    }
-
-    DEFAULT_PARAMS = {
-        "cooling_set_point": 0,  # 2 bytes length?
-        "heating_set_point": 0,  # 2 bytes length?
-        "range_enabled": 0,  # 1 bytes length?
-        "mode": 0,  # 1 bytes length?
-        "minimum_differential": 0,  # 1 bytes length?
-        "min_cooling_lowerlimit": 0,  # 1 bytes length?
-        "min_heating_lowerlimit": 0,  # 1 bytes length?
-        "cooling_lowerlimit": 0,  # 2 bytes length?
-        "heating_lowerlimit": 0,  # 2 bytes length?
-        "cooling_lowerlimit_symbol": 0,  # 1 bytes length?
-        "heating_lowerlimit_symbol": 0,  # 1 bytes length?
-        "max_cooling_upperlimit": 0,  # 1 bytes length?
-        "max_heating_upperlimit": 0,  # 1 bytes length?
-        "cooling_upperlimit": 0,  # 2 bytes length?
-        "heating_upperlimit": 0,  # 2 bytes length?
-        "cooling_upperlimit_symbol": 0,  # 1 bytes length?
-        "heating_upperlimit_symbol": 0,  # 1 bytes length?
-    }
+    PARAMETERS = [
+        ("cooling_set_point", 0x20, 0),  # 2 bytes length?
+        ("heating_set_point", 0x21, 0),  # 2 bytes length?
+        ("range_enabled", 0x30, 0),  # 1 bytes length?
+        ("mode", 0x31, 0),  # 1 bytes length?
+        ("minimum_differential", 0x32, 0),  # 1 bytes length?
+        ("min_cooling_lowerlimit", 0xA0, 0),  # 1 bytes length?
+        ("min_heating_lowerlimit", 0xA1, 0),  # 1 bytes length?
+        ("cooling_lowerlimit", 0xA2, 0),  # 2 bytes length?
+        ("heating_lowerlimit", 0xA3, 0),  # 2 bytes length?
+        ("cooling_lowerlimit_symbol", 0xA4, 0),  # 1 bytes length?
+        ("heating_lowerlimit_symbol", 0xA5, 0),  # 1 bytes length?
+        ("max_cooling_upperlimit", 0xB0, 0),  # 1 bytes length?
+        ("max_heating_upperlimit", 0xB1, 0),  # 1 bytes length?
+        ("cooling_upperlimit", 0xB2, 0),  # 2 bytes length?
+        ("heating_upperlimit", 0xB3, 0),  # 2 bytes length?
+        ("cooling_upperlimit_symbol", 0xB4, 0),  # 1 bytes length?
+        ("heating_upperlimit_symbol", 0xB5, 0),  # 1 bytes length?
+    ]
 
     @staticmethod
     def convert_from_device(device_value: int | float) -> int:
@@ -222,7 +206,7 @@ class SetPointKnob(Knob):
         reply = {
             k: self.convert_from_device(v)
             for k, v in reply.items()
-            if k in ["cooling_set_point_key", "heating_set_point_key"]
+            if k in ["cooling_set_point", "heating_set_point"]
         }
         return reply
 
@@ -235,10 +219,11 @@ class SetPointKnob(Knob):
 @final
 class SensorsKnob(Knob):
     QUERY_CMD_ID = 272
-    # UPDATE_CMD_ID = -1  # Not implemented
-    DATA_KEYS = {"indoor": 0x40, "outdoor": 0x41}
-
-    DEFAULT_PARAMS = {"indoor": 0xFF, "outdoor": 0xFF}
+    UPDATE_CMD_ID = 0  # Not implemented
+    PARAMETERS = [
+        ("indoor", 0x40, 0xFF),
+        ("outdoor", 0x41, 0xFF),
+    ]
 
     @staticmethod
     def convert_from_device(device_value: int) -> int | None:
@@ -258,10 +243,8 @@ class SensorsKnob(Knob):
 @final
 class CleanFilterIndicatorKnob(Knob):
     QUERY_CMD_ID = 256
-    # UPDATE_CMD_ID = -1  # Not implemented
-
-    DATA_KEYS = {"clean_filter_indicator": 0x62}
-    DEFAULT_PARAMS = {"clean_filter_indicator": 0}
+    UPDATE_CMD_ID = 0  # Not implemented
+    PARAMETERS = [("clean_filter_indicator", 0x62, 0)]
 
     @staticmethod
     def convert_from_device(device_value: int) -> bool:
@@ -277,10 +260,9 @@ class CleanFilterIndicatorKnob(Knob):
 ##
 @final
 class CleanFilterTimerResetKnob(Knob):
-    # QUERY_CMD_ID = 256
-    UPDATE_CMD_ID = 16928  # Not implemented
-    DATA_KEYS = {"clean_filter_timer_reset": 0xFE}
-    DEFAULT_PARAMS = {"clean_filter_timer_reset": 0x01}
+    QUERY_CMD_ID = 0  # Not implemented
+    UPDATE_CMD_ID = 16928
+    PARAMETERS = [("clean_filter_timer_reset", 0xFE, 0x01)]
 
     async def update(self) -> None:
         await self._update()

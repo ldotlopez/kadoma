@@ -28,14 +28,14 @@ class TestKnob(unittest.TestCase):
 
     def get_query_payload_hex(self):
         return build_packet(
-            self.KnobCls.QUERY_CMD_ID,
-            self.KnobCls._as_param_list(self.knob.DEFAULT_PARAMS),
+            self.knob.QUERY_CMD_ID,
+            self.knob._as_param_list(self.knob.DEFAULT_PARAMETERS),
         ).hex(":")
 
     def get_update_payload_hex(self, **kwargs):
         return build_packet(
-            self.KnobCls.UPDATE_CMD_ID,
-            self.KnobCls._as_param_list(self.knob.DEFAULT_PARAMS | kwargs),
+            self.knob.UPDATE_CMD_ID,
+            self.knob._as_param_list(self.knob.DEFAULT_PARAMETERS | kwargs),
         ).hex(":")
 
 
