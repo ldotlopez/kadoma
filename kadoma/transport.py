@@ -2,18 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Iterable
+from typing import Any, Iterable, Type
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
-import ipdb
-from pymadoka import LOGGER
-from typing import Any, Type
 from types import TracebackType
 from .consts import NOTIFY_CHAR_UUID, WRITE_CHAR_UUID
 
 LOGGER = logging.getLogger(__name__)
 
+Command = int
 CommandParams = list[tuple[int, int]]
 
 
@@ -46,7 +44,7 @@ class PartialPacket:
 
         ret = bytearray()
         for idx in range(0, len(self.chunks)):
-            ret = ret + self.chunks[idx]
+            ret += self.chunks[idx]
 
         return ret
 
@@ -77,6 +75,8 @@ class Transport:
 
     async def stop(self):
         await self.client.stop_notify(NOTIFY_CHAR_UUID)
+        for future in self.futures.values():
+            future.cancel()
 
     def notify_handler(self, sender: BleakGATTCharacteristic, data: bytearray) -> None:
         LOGGER.debug(f"notified with: {data.hex(':')}")
@@ -85,24 +85,39 @@ class Transport:
             LOGGER.warning("OOB packet, discard")
             return
 
+        if data[0] != 0x00 and not self.partial:
+            LOGGER.error("Received continuation packet without a start packet.")
+            return
+
         if data[0] == 0x00:
             self.partial = PartialPacket(data)
         else:
-            self.partial.add_chunk(data)
+            self.partial.add_chunk(data)  # type: ignore[union-attr]
 
-        if self.partial.is_complete:
-            packet = self.partial.get_data()
-            LOGGER.debug(f"Packet rebuilded: {packet.hex(':')}")
-            futurekey = get_command_id_from_packet(packet)
-            cmd, params = parse_packet(packet)
-            self.futures[futurekey].set_result((cmd, params))
+        if not self.partial.is_complete:  # type: ignore[union-attr]
+            return
+
+        packet = self.partial.get_data()  # type: ignore[union-attr]
+        LOGGER.debug(f"Packet rebuilded: {packet.hex(':')}")
+        futurekey = get_command_id_from_packet(packet)
+
+        future = self.futures.get(futurekey)
+        if not future:
+            LOGGER.error("packet rebuilded but not expected, ignoring (not in futures)")
             self.partial = None
+            return
 
-        # pck = self.parse_packet(data)
-        # print(f"{sender}: {data}")
+        if future.done():
+            LOGGER.error("internal state error")
+            self.partial = None
+            return
+
+        cmd, params = parse_packet(packet)
+        future.set_result((cmd, params))
+        self.partial = None
 
     async def send_command(
-        self, cmd: int, params: CommandParams | None = None
+        self, cmd: Command, params: CommandParams | None = None
     ) -> tuple[int, CommandParams]:
         lenght, cmdb, paramsb = build_packet_parts(cmd, params)
         data = lenght + cmdb + paramsb
@@ -122,12 +137,16 @@ class Transport:
             self.futures[futurekey].cancel()
             self.futures.pop(futurekey)
 
-        self.futures[futurekey] = asyncio.get_running_loop().create_future()
+        self.futures[futurekey] = (
+            asyncio.Future()
+        )  # asyncio.get_running_loop().create_future()
         await self.send_bytes(data)
         LOGGER.info(f"waiting for response to command {cmd}")
         await self.futures[futurekey]
 
         response = self.futures[futurekey].result()
+        del self.futures[futurekey]
+
         LOGGER.info(f"got response: {response}")
         return response
 
@@ -135,8 +154,8 @@ class Transport:
         LOGGER.info(f"sending data {data.hex(':')}")
 
         for idx, chunk in enumerate(self.packet_chunk_it(data)):
-            chunk = bytes([idx]) + chunk
-            print(chunk.hex(":"))
+            chunk.insert(0, idx)
+            LOGGER.info(f"+- sending chunk {chunk.hex(':')}")
             await self.client.write_gatt_char(WRITE_CHAR_UUID, chunk)
 
     def packet_chunk_it(self, data: bytearray) -> Iterable[bytearray]:
@@ -146,20 +165,31 @@ class Transport:
         yield from chunkerize_packet(data, max_size=chunk_size)
 
 
-def chunkerize_packet(data, *, max_size: int) -> Iterable[bytearray]:
-    yield from (bytearray(data[i : i + max_size]) for i in range(0, len(data), max_size))
-
-
-def build_packet(cmd: int, params: CommandParams | None = None) -> bytearray:
+def build_packet(cmd: Command, params: CommandParams | None = None) -> bytearray:
     preludeb, cmdb, paramsb = build_packet_parts(cmd, params)
     return preludeb + cmdb + paramsb
 
 
-def get_command_id_from_packet(data: bytearray) -> int:
-    return int.from_bytes(data[3:5], "big")
+def build_packet_parts(
+    cmd: Command, params: CommandParams | None = None
+) -> tuple[bytearray, bytearray, bytearray]:
+    cmd_subpck = bytearray(cmd.to_bytes(2, "big"))
+
+    if params:
+        params_subpck = bytearray()
+        for k, v in params:
+            v_size = max(1, (v.bit_length() + 7) // 8)
+            params_subpck.append(k)
+            params_subpck.append(v_size)
+            params_subpck.extend(v.to_bytes(v_size, "big"))
+    else:
+        params_subpck = bytearray([0x00, 0x00])
+
+    pcklen = 2 + len(cmd_subpck) + len(params_subpck)
+    return bytearray([pcklen, 0x00]), cmd_subpck, params_subpck
 
 
-def parse_packet(data: bytearray) -> tuple[int, list[tuple[int, int]]]:
+def parse_packet(data: bytearray) -> tuple[Command, CommandParams]:
     if not data:
         raise ValueError("data is empty", data)
 
@@ -167,7 +197,7 @@ def parse_packet(data: bytearray) -> tuple[int, list[tuple[int, int]]]:
         raise ValueError("data is too small", data)
 
     if len(data) != data[0]:
-        raise ValueError("data size missmatch", data)
+        raise ValueError(f"expected packet length {data[0]}, got {len(data)}", data)
 
     cmd = int.from_bytes(data[2:4])
     params = []
@@ -184,20 +214,11 @@ def parse_packet(data: bytearray) -> tuple[int, list[tuple[int, int]]]:
     return cmd, params
 
 
-def build_packet_parts(
-    cmd: int, params: CommandParams | None = None
-) -> tuple[bytearray, bytearray, bytearray]:
-    cmd_subpck = bytearray(cmd.to_bytes(2, "big"))
+def get_command_id_from_packet(data: bytearray) -> int:
+    return int.from_bytes(data[3:5], "big")
 
-    if params:
-        params_subpck = bytearray()
-        for k, v in params:
-            v_size = max(1, (v.bit_length() + 7) // 8)
-            params_subpck.append(k)
-            params_subpck.append(v_size)
-            params_subpck.extend(v.to_bytes(v_size, "big"))
-    else:
-        params_subpck = bytearray([0x00, 0x00])
 
-    pcklen = 2 + len(cmd_subpck) + len(params_subpck)
-    return bytearray([pcklen, 0x00]), cmd_subpck, params_subpck
+def chunkerize_packet(data, *, max_size: int) -> Iterable[bytearray]:
+    yield from (
+        bytearray(data[i : i + max_size]) for i in range(0, len(data), max_size)
+    )

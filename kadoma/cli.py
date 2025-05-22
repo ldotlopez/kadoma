@@ -13,8 +13,16 @@ from kadoma.transport import Transport
 ##
 # Power state
 ##
-from .knobs import (CleanFilterIndicatorKnob, FanSpeedKnob, FanSpeedValue, OperationModeKnob,
-                    OperationModeValue, PowerStateKnob, SetPointKnob)
+from .knobs import (
+    CleanFilterIndicatorKnob,
+    FanSpeedKnob,
+    FanSpeedValue,
+    OperationModeKnob,
+    OperationModeValue,
+    PowerStateKnob,
+    SensorsKnob,
+    SetPointKnob,
+)
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.DEBUG)
@@ -57,6 +65,7 @@ async def sender(address: str, payload: str):
 @click_async_wrapper
 async def client():
     pass
+
 
 ##
 # Power state
@@ -108,6 +117,7 @@ async def set_operation_mode(address: str, mode: str):
             res = await knob.update(mode=OperationModeValue[mode])
             print(f"Response data: {res}")
 
+
 ##
 # Fan speed
 ##
@@ -154,18 +164,19 @@ async def get_set_point(address: str):
             res = await knob.query()
             print(f"Response data: {res}")
 
+
 @client.command
 @click.option("--address", "-a", required=True, help="BLE device address")
 @click.argument("cooling", type=int)
 @click.argument("heating", type=int)
 @click_async_wrapper
-async def set_set_point(address: str, cooling: int, heating:int):
+async def set_set_point(address: str, cooling: int, heating: int):
     async with BleakClient(address) as client:
         async with Transport(client) as transport:
             knob = SetPointKnob(transport)
             res = await knob.update(cooling, heating)
             print(f"Response data: {res}")
-from .knobs import SensorsKnob
+
 
 ##
 # sensors
@@ -179,6 +190,8 @@ async def get_sensors(address: str):
             knob = SensorsKnob(transport)
             res = await knob.query()
             print(f"Response data: {res}")
+
+
 ##
 # clean filter indicator
 ##
@@ -191,4 +204,3 @@ async def get_clean_filter_indicator(address: str):
             knob = CleanFilterIndicatorKnob(transport)
             res = await knob.query()
             print(f"Response data: {res}")
-

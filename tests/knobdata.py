@@ -1,22 +1,17 @@
 import unittest
 
+import ipdb
+
 from kadoma.knobs import (
     CleanFilterIndicatorKnob,
-    CleanFilterIndicatorParams,
     FanSpeedKnob,
-    FanSpeedParams,
     FanSpeedValue,
     Knob,
-    KnobParams,
     OperationModeKnob,
-    OperationModeParams,
     OperationModeValue,
     PowerStateKnob,
-    PowerStateParams,
     SensorsKnob,
-    SensorsParams,
     SetPointKnob,
-    SetPointParams,
 )
 from kadoma.transport import build_packet, parse_packet
 
@@ -27,24 +22,25 @@ def bytearray_from_hex(s: str) -> bytearray:
 
 class TestKnob(unittest.TestCase):
     KnobCls: type[Knob]
-    KnobParams: type[KnobParams]
+
+    def setUp(self) -> None:
+        self.knob = self.KnobCls(None)
 
     def get_query_payload_hex(self):
         return build_packet(
             self.KnobCls.QUERY_CMD_ID,
-            self.KnobParams().pack(),
+            self.KnobCls._as_param_list(self.knob.DEFAULT_PARAMS),
         ).hex(":")
 
     def get_update_payload_hex(self, **kwargs):
         return build_packet(
             self.KnobCls.UPDATE_CMD_ID,
-            self.KnobParams(**kwargs).pack(),
+            self.KnobCls._as_param_list(self.knob.DEFAULT_PARAMS | kwargs),
         ).hex(":")
 
 
 class TestPowerStateKnob(TestKnob):
     KnobCls = PowerStateKnob
-    KnobParams = PowerStateParams
 
     def test_get_power_state_payload(self):
         self.assertEqual(self.get_query_payload_hex(), "07:00:00:20:20:01:00")
@@ -62,27 +58,25 @@ class TestPowerStateKnob(TestKnob):
 
 class TestOperationModeKnob(TestKnob):
     KnobCls = OperationModeKnob
-    KnobParams = OperationModeParams
 
     def test_get_operation_mode_payload(self):
         self.assertEqual(self.get_query_payload_hex(), "07:00:00:30:20:01:02")
 
     def test_set_operation_mode_auto_payload(self):
         self.assertEqual(
-            self.get_update_payload_hex(mode=OperationModeValue.AUTO),
+            self.get_update_payload_hex(mode=OperationModeValue.AUTO.value),
             "07:00:40:30:20:01:02",
         )
 
     def test_set_operation_mode_fan_payload(self):
         self.assertEqual(
-            self.get_update_payload_hex(mode=OperationModeValue.FAN),
+            self.get_update_payload_hex(mode=OperationModeValue.FAN.value),
             "07:00:40:30:20:01:00",
         )
 
 
 class TestFanSpeedKnob(TestKnob):
     KnobCls = FanSpeedKnob
-    KnobParams = FanSpeedParams
 
     def test_get_fan_speed_payload(self):
         self.assertEqual(self.get_query_payload_hex(), "0a:00:00:50:20:01:00:21:01:00")
@@ -90,7 +84,7 @@ class TestFanSpeedKnob(TestKnob):
     def test_set_fan_speed_auto_payload(self):
         self.assertEqual(
             self.get_update_payload_hex(
-                cooling=FanSpeedValue.AUTO, heating=FanSpeedValue.AUTO
+                cooling=FanSpeedValue.AUTO.value, heating=FanSpeedValue.AUTO.value
             ),
             "0a:00:40:50:20:01:00:21:01:00",
         )
@@ -98,7 +92,7 @@ class TestFanSpeedKnob(TestKnob):
     def test_set_fan_speed_mixed_payload(self):
         self.assertEqual(
             self.get_update_payload_hex(
-                cooling=FanSpeedValue.HIGH, heating=FanSpeedValue.LOW
+                cooling=FanSpeedValue.HIGH.value, heating=FanSpeedValue.LOW.value
             ),
             "0a:00:40:50:20:01:05:21:01:01",
         )
@@ -106,7 +100,6 @@ class TestFanSpeedKnob(TestKnob):
 
 class TestSetPointKnob(TestKnob):
     KnobCls = SetPointKnob
-    KnobParams = SetPointParams
 
     def test_get_set_point_payload(self):
         expected = "34:00:00:40:20:01:00:21:01:00:30:01:00:31:01:00:32:01:00:a0:01:00:a1:01:00:a3:01:00:a4:01:00:a5:01:00:b0:01:00:b1:01:00:b2:01:00:b3:01:00:b4:01:00:b5:01:00"  # noqa: E501
@@ -122,12 +115,10 @@ class TestSetPointKnob(TestKnob):
 
 class TestSensorsKnob(TestKnob):
     KnobCls = SensorsKnob
-    KnobParams = SensorsParams
 
 
 class TestCleanFilterIndicatornob(TestKnob):
     KnobCls = CleanFilterIndicatorKnob
-    KnobParams = CleanFilterIndicatorParams
 
     def test_get_set_point_payload(self):
         expected = "07:00:01:00:62:01:00"
@@ -180,7 +171,6 @@ class TestParsers(unittest.TestCase):
         speeds = FanSpeedParams.unpack(params)
         self.assertEqual(speeds.cooling, FanSpeedValue.LOW)
         self.assertEqual(speeds.heating, FanSpeedValue.LOW)
-
 
 
 if __name__ == "__main__":
