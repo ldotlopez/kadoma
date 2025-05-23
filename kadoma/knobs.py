@@ -4,7 +4,7 @@ import enum
 from functools import cached_property
 import logging
 
-from .transport import CommandParams, Transport
+from .transport import CommandParams, CommandCode, Transport
 
 
 CommandParamMap = dict[str, int]
@@ -13,9 +13,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 class Knob:
-    QUERY_CMD_ID: int
-    UPDATE_CMD_ID: int
-    PARAMETERS: list[tuple[str, int, int]]
+    QUERY_CMD_ID: CommandCode
+    UPDATE_CMD_ID: CommandCode
+    PARAMETERS: list[tuple[str, CommandCode, int]]
 
     def __init__(self, transport: Transport) -> None:
         self.transport = transport
@@ -25,11 +25,11 @@ class Knob:
         return {x[0]: x[2] for x in self.PARAMETERS}
 
     @cached_property
-    def _map_param_name_to_code(self) -> dict[str, int]:
+    def _map_param_name_to_code(self) -> dict[str, CommandCode]:
         return {x[0]: x[1] for x in self.PARAMETERS}
 
     @cached_property
-    def _map_param_code_to_name(self) -> dict[int, str]:
+    def _map_param_code_to_name(self) -> dict[CommandCode, str]:
         return {x[1]: x[0] for x in self.PARAMETERS}
 
     def _as_param_list(self, map: CommandParamMap) -> CommandParams:
@@ -40,7 +40,7 @@ class Knob:
         key_map = self._map_param_code_to_name
         return {key_map[k]: v for k, v in params}
 
-    async def _send(self, cmd: int, params: CommandParamMap) -> CommandParamMap:
+    async def _send(self, cmd: CommandCode, params: CommandParamMap) -> CommandParamMap:
         _, resp_params = await self.transport.send_command(
             cmd, self._as_param_list(params)
         )
@@ -60,7 +60,8 @@ class Knob:
         resp_params = await self._send(self.UPDATE_CMD_ID, params)
 
         # Little hack to return optimishtic data from device.
-        # Yes, we override response params with requested params
+        #
+        # We override response params with requested params (yes, in this order).
         # Transport just passes response from the device which is NOT reflecting
         # updated data
         resp = resp_params | params

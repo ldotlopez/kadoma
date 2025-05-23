@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Iterable, Type
+from typing import Iterable, Type
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -11,7 +11,7 @@ from .consts import NOTIFY_CHAR_UUID, WRITE_CHAR_UUID
 
 LOGGER = logging.getLogger(__name__)
 
-Command = int
+CommandCode = int
 CommandParams = list[tuple[int, int]]
 
 
@@ -21,17 +21,21 @@ class PartialPacket:
         self.add_chunk(chunk)
 
     def add_chunk(self, chunk: bytearray):
-        self.chunks[chunk[0]] = chunk[1:]
+        if not chunk:
+            raise ValueError("chunk can't be empty")
+
+        if len(chunk) < 2:
+            raise ValueError("chunk is too small")
+
+        chunk_idx, chunk_data = chunk[0], chunk[1:]
+        self.chunks[chunk_idx] = chunk_data
 
     @property
     def current_size(self) -> int:
-        return sum([len(x) for x in self.chunks.values()])
+        return sum(len(x) for x in self.chunks.values())
 
     @property
     def expected_size(self) -> int | None:
-        if 0 not in self.chunks:
-            return None
-
         return self.chunks[0][0]
 
     @property
@@ -43,8 +47,8 @@ class PartialPacket:
             raise ValueError
 
         ret = bytearray()
-        for idx in range(0, len(self.chunks)):
-            ret += self.chunks[idx]
+        for idx in range(len(self.chunks)):
+            ret.extend(self.chunks[idx])
 
         return ret
 
@@ -52,7 +56,7 @@ class PartialPacket:
 class Transport:
     def __init__(self, client: BleakClient) -> None:
         self.client = client
-        self.futures: dict[Any, asyncio.Future] = {}
+        self.futures: dict[CommandCode, asyncio.Future] = {}
         self.partial: PartialPacket | None = None
 
     async def __aenter__(self):
@@ -68,14 +72,16 @@ class Transport:
         await self.stop()
 
     async def start(self):
-        await self.client.start_notify(NOTIFY_CHAR_UUID, self.notify_handler)
-        LOGGER.debug("notify_handler ready")
         if self.client._backend.__class__.__name__ == "BleakClientBlueZDBus":  # type: ignore
             await self.client._backend._acquire_mtu()  # type: ignore
 
+        await self.client.start_notify(NOTIFY_CHAR_UUID, self.notify_handler)
+
     async def stop(self):
         await self.client.stop_notify(NOTIFY_CHAR_UUID)
-        for future in self.futures.values():
+
+        while self.futures:
+            future = self.futures.pop(next(iter(self.futures.keys())))
             future.cancel()
 
     def notify_handler(self, sender: BleakGATTCharacteristic, data: bytearray) -> None:
@@ -117,7 +123,7 @@ class Transport:
         self.partial = None
 
     async def send_command(
-        self, cmd: Command, params: CommandParams | None = None
+        self, cmd: CommandCode, params: CommandParams | None = None
     ) -> tuple[int, CommandParams]:
         lenght, cmdb, paramsb = build_packet_parts(cmd, params)
         data = lenght + cmdb + paramsb
@@ -165,13 +171,13 @@ class Transport:
         yield from chunkerize_packet(data, max_size=chunk_size)
 
 
-def build_packet(cmd: Command, params: CommandParams | None = None) -> bytearray:
+def build_packet(cmd: CommandCode, params: CommandParams | None = None) -> bytearray:
     preludeb, cmdb, paramsb = build_packet_parts(cmd, params)
     return preludeb + cmdb + paramsb
 
 
 def build_packet_parts(
-    cmd: Command, params: CommandParams | None = None
+    cmd: CommandCode, params: CommandParams | None = None
 ) -> tuple[bytearray, bytearray, bytearray]:
     cmd_subpck = bytearray(cmd.to_bytes(2, "big"))
 
@@ -189,7 +195,7 @@ def build_packet_parts(
     return bytearray([pcklen, 0x00]), cmd_subpck, params_subpck
 
 
-def parse_packet(data: bytearray) -> tuple[Command, CommandParams]:
+def parse_packet(data: bytearray) -> tuple[CommandCode, CommandParams]:
     if not data:
         raise ValueError("data is empty", data)
 
