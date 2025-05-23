@@ -3,9 +3,6 @@ from __future__ import annotations
 import enum
 from functools import cached_property
 import logging
-from typing import final
-
-import ipdb
 
 from .transport import CommandParams, Transport
 
@@ -21,27 +18,26 @@ class Knob:
     PARAMETERS: list[tuple[str, int, int]]
 
     def __init__(self, transport: Transport) -> None:
-        super().__init__()
         self.transport = transport
 
     @cached_property
-    def DEFAULT_PARAMETERS(self) -> CommandParamMap:
+    def default_parameters(self) -> CommandParamMap:
         return {x[0]: x[2] for x in self.PARAMETERS}
 
     @cached_property
-    def _param_map_str_to_int(self) -> dict[str, int]:
+    def _map_param_name_to_code(self) -> dict[str, int]:
         return {x[0]: x[1] for x in self.PARAMETERS}
 
     @cached_property
-    def _param_map_int_to_str(self) -> dict[int, str]:
+    def _map_param_code_to_name(self) -> dict[int, str]:
         return {x[1]: x[0] for x in self.PARAMETERS}
 
     def _as_param_list(self, map: CommandParamMap) -> CommandParams:
-        key_map = self._param_map_str_to_int
+        key_map = self._map_param_name_to_code
         return [(key_map[k], v) for k, v in map.items()]
 
     def _as_param_map(self, params: CommandParams) -> CommandParamMap:
-        key_map = self._param_map_int_to_str
+        key_map = self._map_param_code_to_name
         return {key_map[k]: v for k, v in params}
 
     async def _send(self, cmd: int, params: CommandParamMap) -> CommandParamMap:
@@ -52,10 +48,15 @@ class Knob:
         return self._as_param_map(resp_params)
 
     async def _query(self) -> CommandParamMap:
-        return await self._send(self.QUERY_CMD_ID, self.DEFAULT_PARAMETERS)
+        reply = await self._send(self.QUERY_CMD_ID, self.default_parameters)
+
+        # if type(self).convert_from_device is not Knob.convert_from_device:
+        #     reply = dict([self.convert_from_device(k, v) for k, v in reply.items()])
+
+        return reply
 
     async def _update(self, **kwargs: int) -> CommandParamMap:
-        params = self.DEFAULT_PARAMETERS | kwargs
+        params = self.default_parameters | kwargs
         resp_params = await self._send(self.UPDATE_CMD_ID, params)
 
         # Little hack to return optimishtic data from device.
@@ -64,6 +65,9 @@ class Knob:
         # updated data
         resp = resp_params | params
         return resp
+
+    # def convert_from_device(self, key: str, value: int) -> tuple[str, Any]:
+    #     pass
 
 
 ##
@@ -76,10 +80,9 @@ class Knob:
 #     OFF = 0
 
 
-@final
 class PowerStateKnob(Knob):
-    QUERY_CMD_ID = 32
-    UPDATE_CMD_ID = 16416
+    QUERY_CMD_ID = 0x20
+    UPDATE_CMD_ID = 0x4020
 
     PARAMETERS = [("state", 0x20, 0x00)]
 
@@ -106,10 +109,9 @@ class OperationModeValue(enum.Enum):
     VENTILATION = 5
 
 
-@final
 class OperationModeKnob(Knob):
-    QUERY_CMD_ID = 48
-    UPDATE_CMD_ID = 16432
+    QUERY_CMD_ID = 0x30
+    UPDATE_CMD_ID = 0x4030
 
     PARAMETERS = [("mode", 0x20, OperationModeValue.AUTO.value)]
 
@@ -123,48 +125,13 @@ class OperationModeKnob(Knob):
 
 
 ##
-# Fan speed
-##
-
-
-class FanSpeedValue(enum.Enum):
-    HIGH = 5
-    MID_HIGH = 4
-    MID = 3
-    MID_LOW = 2
-    LOW = 1
-    AUTO = 0
-
-
-@final
-class FanSpeedKnob(Knob):
-    QUERY_CMD_ID = 80
-    UPDATE_CMD_ID = 16464
-    PARAMETERS = [
-        ("cooling", 0x20, FanSpeedValue.AUTO.value),
-        ("heating", 0x21, FanSpeedValue.AUTO.value),
-    ]
-
-    async def query(self) -> tuple[FanSpeedValue, FanSpeedValue]:
-        reply = await self._query()
-        return FanSpeedValue(reply["cooling"]), FanSpeedValue(reply["heating"])
-
-    async def update(
-        self, cooling: FanSpeedValue, heating: FanSpeedValue
-    ) -> tuple[FanSpeedValue, FanSpeedValue]:
-        reply = await self._update(cooling=cooling.value, heating=heating.value)
-        return FanSpeedValue(reply["cooling"]), FanSpeedValue(reply["heating"])
-
-
-##
 # Set point
 ##
 
 
-@final
 class SetPointKnob(Knob):
-    QUERY_CMD_ID = 64
-    UPDATE_CMD_ID = 16448
+    QUERY_CMD_ID = 40
+    UPDATE_CMD_ID = 0x4040
     PARAMETERS = [
         ("cooling_set_point", 0x20, 0),  # 2 bytes length?
         ("heating_set_point", 0x21, 0),  # 2 bytes length?
@@ -196,6 +163,7 @@ class SetPointKnob(Knob):
     async def query(self) -> dict[str, int]:
         reply = await self._query()
         reply = {k: self.convert_from_device(v) for k, v in reply.items()}
+
         return reply
 
     async def update(self, cooling: int, heating: int) -> dict[str, int]:
@@ -212,13 +180,65 @@ class SetPointKnob(Knob):
 
 
 ##
+# Fan speed
+##
+
+
+class FanSpeedValue(enum.Enum):
+    HIGH = 5
+    MID_HIGH = 4
+    MID = 3
+    MID_LOW = 2
+    LOW = 1
+    AUTO = 0
+
+
+class FanSpeedKnob(Knob):
+    QUERY_CMD_ID = 0x50
+    UPDATE_CMD_ID = 0x4050
+
+    PARAMETERS = [
+        ("cooling", 0x20, FanSpeedValue.AUTO.value),
+        ("heating", 0x21, FanSpeedValue.AUTO.value),
+    ]
+
+    async def query(self) -> tuple[FanSpeedValue, FanSpeedValue]:
+        reply = await self._query()
+        return FanSpeedValue(reply["cooling"]), FanSpeedValue(reply["heating"])
+
+    async def update(
+        self, cooling: FanSpeedValue, heating: FanSpeedValue
+    ) -> tuple[FanSpeedValue, FanSpeedValue]:
+        reply = await self._update(cooling=cooling.value, heating=heating.value)
+        return FanSpeedValue(reply["cooling"]), FanSpeedValue(reply["heating"])
+
+
+##
+# Clean filter indicator
+##
+
+
+class CleanFilterIndicatorKnob(Knob):
+    QUERY_CMD_ID = 0x100
+    UPDATE_CMD_ID = 0  # Not implemented
+    PARAMETERS = [("clean_filter_indicator", 0x62, 0)]
+
+    @staticmethod
+    def convert_from_device(device_value: int) -> bool:
+        return False if device_value == 0x00 else True
+
+    async def query(self) -> bool:
+        reply = await self._query()
+        return self.convert_from_device(reply["clean_filter_indicator"])
+
+
+##
 # Sensors
 ##
 
 
-@final
 class SensorsKnob(Knob):
-    QUERY_CMD_ID = 272
+    QUERY_CMD_ID = 0x110
     UPDATE_CMD_ID = 0  # Not implemented
     PARAMETERS = [
         ("indoor", 0x40, 0xFF),
@@ -236,32 +256,13 @@ class SensorsKnob(Knob):
 
 
 ##
-# Clean filter indicator
-##
-
-
-@final
-class CleanFilterIndicatorKnob(Knob):
-    QUERY_CMD_ID = 256
-    UPDATE_CMD_ID = 0  # Not implemented
-    PARAMETERS = [("clean_filter_indicator", 0x62, 0)]
-
-    @staticmethod
-    def convert_from_device(device_value: int) -> bool:
-        return False if device_value == 0x00 else True
-
-    async def query(self) -> bool:
-        reply = await self._query()
-        return self.convert_from_device(reply["clean_filter_indicator"])
-
-
-##
 # Reset clean filter indicator
 ##
-@final
+
+
 class CleanFilterTimerResetKnob(Knob):
     QUERY_CMD_ID = 0  # Not implemented
-    UPDATE_CMD_ID = 16928
+    UPDATE_CMD_ID = 0x4220
     PARAMETERS = [("clean_filter_timer_reset", 0xFE, 0x01)]
 
     async def update(self) -> None:
