@@ -6,13 +6,148 @@ from typing import Iterable, Type
 
 from bleak import BleakClient
 from bleak.backends.characteristic import BleakGATTCharacteristic
+from bleak.backends.device import BLEDevice
 from types import TracebackType
-from .consts import NOTIFY_CHAR_UUID, WRITE_CHAR_UUID
+from .consts import NOTIFY_CHAR_UUID, WRITE_CHAR_UUID, BLUETOOTH_TIMEOUT
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
 LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.DEBUG)
 
 CommandCode = int
 CommandParams = list[tuple[int, int]]
+
+
+@asynccontextmanager
+async def get_transport(address: str | BLEDevice) -> AsyncIterator[Transport]:
+    async with BleakClient(address, timeout=BLUETOOTH_TIMEOUT) as device:
+        async with Transport(device) as transport:
+            yield transport
+
+
+class Transport:
+    def __init__(self, client: BleakClient) -> None:
+        self.client = client
+        self.futures: dict[CommandCode, asyncio.Future] = {}
+        self.partial: PartialPacket | None = None
+
+    async def __aenter__(self):
+        await self.start()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: Type[BaseException],
+        exc_val: BaseException,
+        exc_tb: TracebackType,
+    ) -> None:
+        await self.stop()
+
+    async def start(self):
+        if self.client._backend.__class__.__name__ == "BleakClientBlueZDBus":  # type: ignore
+            await self.client._backend._acquire_mtu()  # type: ignore
+
+        await self.client.start_notify(NOTIFY_CHAR_UUID, self.notify_handler)
+
+    async def stop(self):
+        await self.client.stop_notify(NOTIFY_CHAR_UUID)
+        while self.futures:
+            future = self.futures.pop(next(iter(self.futures.keys())))
+            future.cancel()
+
+    async def send_command(
+        self, cmd: CommandCode, params: CommandParams | None = None
+    ) -> tuple[int, CommandParams]:
+        lenght, cmdb, paramsb = build_packet_parts(cmd, params)
+        data = lenght + cmdb + paramsb
+
+        LOGGER.debug(f"send cmd={cmdb.hex(':')}, params={paramsb.hex(':')}")
+
+        # Use command ID has key
+        futurekey = get_command_id_from_packet(data)
+
+        if futurekey in self.futures:
+            LOGGER.debug("+- canceling exisisting task")
+            self.futures[futurekey].cancel()
+            self.futures.pop(futurekey)
+
+        self.futures[futurekey] = asyncio.Future()
+
+        LOGGER.debug("+- sending data")
+        await self.send_bytes(data)
+
+        LOGGER.debug("+- waiting for response")
+        await self.futures[futurekey]
+
+        response = self.futures[futurekey].result()
+        del self.futures[futurekey]
+
+        LOGGER.debug("+- got response")
+        return response
+
+    async def send_bytes(self, data: bytearray):
+        LOGGER.debug(f"send packet: {data.hex(':')}")
+
+        for idx, chunk in enumerate(self.packet_chunk_it(data)):
+            chunk.insert(0, idx)
+            LOGGER.debug(f"+- send chunk: {chunk.hex(':')}")
+            await self.client.write_gatt_char(WRITE_CHAR_UUID, chunk)
+
+    def packet_chunk_it(self, data: bytearray) -> Iterable[bytearray]:
+        # Reserve one byte for chunk enumeration, see
+        # https://github.com/hbldh/bleak/blob/develop/examples/mtu_size.py
+        chunk_size = self.client.mtu_size - 3 - 1
+        yield from chunkerize_packet(data, max_size=chunk_size)
+
+    def notify_handler(self, sender: BleakGATTCharacteristic, data: bytearray) -> None:
+        LOGGER.debug(f"+- recv chunk: {data.hex(':')}")
+
+        if data[0] == 0x00 and self.partial:
+            LOGGER.warning(
+                "got start chunk while expecting a continuation chunk,"
+                + " it will be discarded"
+                + f" ({data[:10].hex(':')})"
+            )
+            return
+
+        if data[0] != 0x00 and not self.partial:
+            LOGGER.warning(
+                "got continuation chunk while expecting a start chunk,"
+                + " it will be discarded"
+                + f" ({data[:10].hex(':')})"
+            )
+            return
+
+        if data[0] == 0x00:
+            self.partial = PartialPacket(data)
+        else:
+            self.partial.add_chunk(data)  # type: ignore[union-attr]
+
+        if not self.partial.is_complete:  # type: ignore[union-attr]
+            return
+
+        packet = self.partial.get_data()  # type: ignore[union-attr]
+        futurekey = get_command_id_from_packet(packet)
+        future = self.futures.get(futurekey)
+
+        if not future:
+            LOGGER.error(
+                f"got unexpected packet with key={futurekey}, ignoring."
+                + f" ({data[:10].hex(':')})"
+            )
+            self.partial = None
+            return
+
+        if future.done():
+            LOGGER.error("Internal state error, this should not happend.")
+            self.partial = None
+            return
+
+        cmd, params = parse_packet(packet)
+        LOGGER.debug(f"recv packet: {packet.hex(':')}")
+        future.set_result((cmd, params))
+        self.partial = None
 
 
 class PartialPacket:
@@ -51,124 +186,6 @@ class PartialPacket:
             ret.extend(self.chunks[idx])
 
         return ret
-
-
-class Transport:
-    def __init__(self, client: BleakClient) -> None:
-        self.client = client
-        self.futures: dict[CommandCode, asyncio.Future] = {}
-        self.partial: PartialPacket | None = None
-
-    async def __aenter__(self):
-        await self.start()
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: Type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
-    ) -> None:
-        await self.stop()
-
-    async def start(self):
-        if self.client._backend.__class__.__name__ == "BleakClientBlueZDBus":  # type: ignore
-            await self.client._backend._acquire_mtu()  # type: ignore
-
-        await self.client.start_notify(NOTIFY_CHAR_UUID, self.notify_handler)
-
-    async def stop(self):
-        await self.client.stop_notify(NOTIFY_CHAR_UUID)
-
-        while self.futures:
-            future = self.futures.pop(next(iter(self.futures.keys())))
-            future.cancel()
-
-    def notify_handler(self, sender: BleakGATTCharacteristic, data: bytearray) -> None:
-        LOGGER.debug(f"notified with: {data.hex(':')}")
-
-        if data[0] == 0x00 and self.partial:
-            LOGGER.warning("OOB packet, discard")
-            return
-
-        if data[0] != 0x00 and not self.partial:
-            LOGGER.error("Received continuation packet without a start packet.")
-            return
-
-        if data[0] == 0x00:
-            self.partial = PartialPacket(data)
-        else:
-            self.partial.add_chunk(data)  # type: ignore[union-attr]
-
-        if not self.partial.is_complete:  # type: ignore[union-attr]
-            return
-
-        packet = self.partial.get_data()  # type: ignore[union-attr]
-        LOGGER.debug(f"Packet rebuilded: {packet.hex(':')}")
-        futurekey = get_command_id_from_packet(packet)
-
-        future = self.futures.get(futurekey)
-        if not future:
-            LOGGER.error("packet rebuilded but not expected, ignoring (not in futures)")
-            self.partial = None
-            return
-
-        if future.done():
-            LOGGER.error("internal state error")
-            self.partial = None
-            return
-
-        cmd, params = parse_packet(packet)
-        future.set_result((cmd, params))
-        self.partial = None
-
-    async def send_command(
-        self, cmd: CommandCode, params: CommandParams | None = None
-    ) -> tuple[int, CommandParams]:
-        lenght, cmdb, paramsb = build_packet_parts(cmd, params)
-        data = lenght + cmdb + paramsb
-
-        LOGGER.info(
-            f"send data {data.hex(':')}"
-            + f" (cmd_id={cmdb.hex(':')}, params={paramsb.hex(':')})"
-        )
-
-        # Use command ID has key
-        futurekey = get_command_id_from_packet(data)
-
-        if futurekey in self.futures:
-            LOGGER.debug(
-                "previous future associated with this command found, canceling it."
-            )
-            self.futures[futurekey].cancel()
-            self.futures.pop(futurekey)
-
-        self.futures[futurekey] = (
-            asyncio.Future()
-        )  # asyncio.get_running_loop().create_future()
-        await self.send_bytes(data)
-        LOGGER.info(f"waiting for response to command {cmd}")
-        await self.futures[futurekey]
-
-        response = self.futures[futurekey].result()
-        del self.futures[futurekey]
-
-        LOGGER.info(f"got response: {response}")
-        return response
-
-    async def send_bytes(self, data: bytearray):
-        LOGGER.info(f"sending data {data.hex(':')}")
-
-        for idx, chunk in enumerate(self.packet_chunk_it(data)):
-            chunk.insert(0, idx)
-            LOGGER.info(f"+- sending chunk {chunk.hex(':')}")
-            await self.client.write_gatt_char(WRITE_CHAR_UUID, chunk)
-
-    def packet_chunk_it(self, data: bytearray) -> Iterable[bytearray]:
-        # Reserve one byte for chunk enumeration, see
-        # https://github.com/hbldh/bleak/blob/develop/examples/mtu_size.py
-        chunk_size = self.client.mtu_size - 3 - 1
-        yield from chunkerize_packet(data, max_size=chunk_size)
 
 
 def build_packet(cmd: CommandCode, params: CommandParams | None = None) -> bytearray:

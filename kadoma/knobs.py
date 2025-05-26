@@ -5,7 +5,7 @@ from functools import cached_property
 import logging
 
 from .transport import CommandParams, CommandCode, Transport
-
+from typing import Any
 
 CommandParamMap = dict[str, int]
 
@@ -66,6 +66,12 @@ class Knob:
         # updated data
         resp = resp_params | params
         return resp
+
+    async def query(self) -> Any:
+        raise NotImplementedError()
+
+    async def update(self, **kwargs: Any) -> Any:
+        raise NotImplementedError()
 
     # def convert_from_device(self, key: str, value: int) -> tuple[str, Any]:
     #     pass
@@ -131,7 +137,7 @@ class OperationModeKnob(Knob):
 
 
 class SetPointKnob(Knob):
-    QUERY_CMD_ID = 40
+    QUERY_CMD_ID = 0x40
     UPDATE_CMD_ID = 0x4040
     PARAMETERS = [
         ("cooling_set_point", 0x20, 0),  # 2 bytes length?

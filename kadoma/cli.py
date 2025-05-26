@@ -3,18 +3,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from contextlib import asynccontextmanager
 from functools import wraps
-from typing import Any, AsyncIterator, Callable
+from typing import Any, Awaitable, Callable
 
 import click
-from bleak import BleakClient, BleakScanner
-from kadoma.consts import BLUETOOTH_TIMEOUT
-from kadoma.transport import Transport
+from bleak import BleakScanner
+from bleak.exc import BleakDeviceNotFoundError
+from kadoma.transport import get_transport
 
-##
-# Power state
-##
+from .controller import Controller
 from .knobs import (
     CleanFilterIndicatorKnob,
     FanSpeedKnob,
@@ -25,6 +22,8 @@ from .knobs import (
     SensorsKnob,
     SetPointKnob,
 )
+
+logging.basicConfig()
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.DEBUG)
@@ -38,11 +37,16 @@ def click_async_wrapper(f: Callable) -> Any:
     return wrapper
 
 
-@asynccontextmanager
-async def get_transport(address: str) -> AsyncIterator[Transport]:
-    async with BleakClient(address, timeout=BLUETOOTH_TIMEOUT) as device:
-        async with Transport(device) as transport:
-            yield transport
+async def runner(fn: Awaitable):
+    try:
+        return await fn
+    except BleakDeviceNotFoundError as e:
+        print_error(f"{e.identifier}: device NOT found")
+
+
+def print_error(*args, **kwargs):
+    kwargs["file"] = sys.stderr
+    print(*args, **kwargs)
 
 
 @click.group()
@@ -63,10 +67,8 @@ async def sender(address: str, payload: str):
         print(f"Device {address} not found, try restaring bluetooth", file=sys.stderr)
         return -1
 
-    async with BleakClient(device, timeout=BLUETOOTH_TIMEOUT) as client:
-        tr = Transport(client)
-        await tr.start()
-        resp = await tr.send_bytes(payloadb)
+    async with get_transport(device) as transport:
+        resp = await transport.send_bytes(payloadb)
         print(resp.hex(":"))
 
 
@@ -74,6 +76,24 @@ async def sender(address: str, payload: str):
 @click_async_wrapper
 async def client():
     pass
+
+
+##
+# Global state
+##
+
+
+@client.command
+@click.option("--address", "-a", required=True, help="BLE device address")
+@click_async_wrapper
+async def get_status(address: str):
+    async def g():
+        async with get_transport(address) as transport:
+            ctlr = Controller(transport)
+            res = await ctlr.get_status()
+            print(f"Response data: {res}")
+
+    return await runner(g())
 
 
 ##
@@ -85,10 +105,13 @@ async def client():
 @click.option("--address", "-a", required=True, help="BLE device address")
 @click_async_wrapper
 async def get_power_state(address: str):
-    async with get_transport(address) as transport:
-        knob = PowerStateKnob(transport)
-        res = await knob.query()
-        print(f"Response data: {res}")
+    async def g():
+        async with get_transport(address) as transport:
+            knob = PowerStateKnob(transport)
+            res = await knob.query()
+            print(f"Response data: {res}")
+
+    return await runner(g())
 
 
 @client.command
