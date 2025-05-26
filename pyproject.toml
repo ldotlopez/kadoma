@@ -1,0 +1,52 @@
+[project]
+name = "kadoma"
+authors = [
+    {name = "L. López", email = "luis@cuarentaydos.com"}
+]
+maintainers = [
+    {name = "L. López", email = "luis@cuarentaydos.com"}
+]
+version = "0.0.0"
+description = "Contorl Daikin BRC1H units over BLE (forked from pymadoka)"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "bleak>=0.22.3",
+]
+keywords = ["thermostat", "homeautomation", "bluetooth"]
+license = "GPL-3.0-or-later"
+
+[project.urls]
+Homepage = "https://github.com/ldotlopez/kadoma"
+Repository = "https://github.com/ldotlopez/kadoma"
+Issues = "https://github.com/ldotlopez/kadoma/issues"
+
+[project.scripts]
+kadoma-cli = "kadoma.cli:main"
+
+[dependency-groups]
+cli = [
+    "click>=8.2.1",
+]
+dev = [
+    "black>=25.1.0",
+    "isort>=6.0.1",
+    "mypy>=1.15.0",
+    "pre-commit>=4.2.0",
+    "pyupgrade>=3.20.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["kadoma"]
+
+[tool.black]
+target-version = ['py313']
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+files = ["kadoma"]
+
+[tool.pyupgrade]
+addopts = "--py313-plus"
