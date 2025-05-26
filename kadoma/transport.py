@@ -26,9 +26,10 @@ from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from types import TracebackType
 
-from bleak import BleakClient
+from bleak import BleakClient, BleakScanner
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakDeviceNotFoundError
 
 from .consts import BLUETOOTH_TIMEOUT, NOTIFY_CHAR_UUID, WRITE_CHAR_UUID
 
@@ -40,9 +41,31 @@ CommandParams = list[tuple[int, int]]
 
 
 @asynccontextmanager
-async def get_transport(address: str | BLEDevice) -> AsyncIterator[Transport]:
-    async with BleakClient(address, timeout=BLUETOOTH_TIMEOUT) as device:
-        async with Transport(device) as transport:
+async def get_transport(
+    address_or_ble_device: str | BLEDevice,
+) -> AsyncIterator[Transport]:
+    if isinstance(address_or_ble_device, str):
+        LOGGER.debug(f"scanning for BLE device with address '{address_or_ble_device}'")
+        ble_device = await BleakScanner.find_device_by_address(
+            address_or_ble_device, timeout=BLUETOOTH_TIMEOUT
+        )
+        if ble_device is None:
+            raise BleakDeviceNotFoundError(address_or_ble_device)
+
+        address_or_ble_device = ble_device
+
+    elif isinstance(address_or_ble_device, BLEDevice) and hasattr(
+        address_or_ble_device, "name"
+    ):
+        pass
+    else:
+        raise TypeError(address_or_ble_device)
+
+    async with BleakClient(address_or_ble_device, timeout=BLUETOOTH_TIMEOUT) as client:
+        # Little hack to make property' name' available on the BleakClient
+        setattr(client, "name", getattr(client, "name", address_or_ble_device.name))
+
+        async with Transport(client) as transport:
             yield transport
 
 
@@ -95,10 +118,12 @@ class Transport:
         self.futures[futurekey] = asyncio.Future()
 
         LOGGER.debug("+- sending data")
-        await self.send_bytes(data)
+        async with asyncio.timeout(BLUETOOTH_TIMEOUT):
+            await self.send_bytes(data)
 
         LOGGER.debug("+- waiting for response")
-        await self.futures[futurekey]
+        async with asyncio.timeout(BLUETOOTH_TIMEOUT):
+            await self.futures[futurekey]
 
         response = self.futures[futurekey].result()
         del self.futures[futurekey]

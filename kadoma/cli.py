@@ -101,7 +101,7 @@ async def client():
 
 
 ##
-# Global state
+# Controller
 ##
 
 
@@ -113,6 +113,19 @@ async def get_status(address: str):
         async with get_transport(address) as transport:
             ctlr = Controller(transport)
             res = await ctlr.get_status()
+            print(f"Response data: {res}")
+
+    return await runner(g())
+
+
+@client.command
+@click.option("--address", "-a", required=True, help="BLE device address")
+@click_async_wrapper
+async def get_info(address: str):
+    async def g():
+        async with get_transport(address) as transport:
+            ctlr = Controller(transport)
+            res = await ctlr.get_info()
             print(f"Response data: {res}")
 
     return await runner(g())

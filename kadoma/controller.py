@@ -20,6 +20,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from kadoma.transport import Transport
 
 from .knobs import (
@@ -30,6 +32,9 @@ from .knobs import (
     SensorsKnob,
     SetPointKnob,
 )
+
+ControllerInfo = dict[str, dict[str, str]]
+LOGGER = logging.getLogger(__name__)
 
 
 class Controller:
@@ -43,6 +48,7 @@ class Controller:
             "sensors": SensorsKnob(transport),
             "set_point": SetPointKnob(transport),
         }
+        self.info: ControllerInfo | None = None
 
     async def get_status(self) -> dict:
         ret = {}
@@ -51,3 +57,41 @@ class Controller:
             ret[key] = await knob.query()
 
         return ret
+
+    async def get_info(self) -> ControllerInfo:
+        if self.info is not None:
+            return self.info
+
+        client = self.transport.client
+        info: dict[str, dict[str, str]] = {}
+
+        for service in client.services:
+            LOGGER.debug(f"{service.uuid}: {service.description}")
+            if service.description not in info:
+                info[service.description] = {}
+
+            sub_info = {}
+            for char in service.characteristics:
+                if "read" not in char.properties:
+                    continue
+
+                value = await client.read_gatt_char(char.uuid)
+                try:
+                    value = value.decode()
+                except UnicodeDecodeError:
+                    value = value.hex(":")
+
+                sub_info[char.description] = value
+                LOGGER.debug(
+                    f"{char.uuid}:"
+                    + f" handle='{char.handle}'"
+                    + f" properties='{','.join(char.properties)}'"
+                    + f" name='{char.description}'"
+                    + f" value='{value}'"
+                )
+
+            if sub_info:
+                info[service.description] = sub_info
+
+        self.info = info
+        return info
