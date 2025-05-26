@@ -195,8 +195,8 @@ class SetPointKnob(Knob):
 
     async def update(self, cooling: int, heating: int) -> dict[str, int]:
         reply = await self._update(
-            cooling_set_point_key=self.convert_to_device(cooling),
-            heating_set_point_key=self.convert_to_device(heating),
+            cooling_set_point=self.convert_to_device(cooling),
+            heating_set_point=self.convert_to_device(heating),
         )
         reply = {
             k: self.convert_from_device(v)
