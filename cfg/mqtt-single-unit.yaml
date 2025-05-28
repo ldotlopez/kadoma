@@ -1,0 +1,16 @@
+daemon:
+    update_interval: 60
+    # address:
+
+mqtt:
+    hostname: "mqtt.local"
+    port: 1883
+    # username: "myuser"
+    # password: "mypassword"
+    ssl: no
+    root_topic: "kadoma/{address}"
+
+homeassistant:
+    enable: yes
+    discovery_topic: "homeassistant/climate/{address}/config"
+    friendly_name: "Main unit"

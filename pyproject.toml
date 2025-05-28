@@ -23,6 +23,10 @@ Issues = "https://github.com/ldotlopez/kadoma/issues"
 
 [project.scripts]
 kadoma-cli = "kadoma.cli:main"
+kadoma-mqtt = "kadoma.mqtt:main"
+
+[tool.uv]
+package = true
 
 [dependency-groups]
 cli = [
@@ -34,6 +38,11 @@ dev = [
     "mypy>=1.15.0",
     "pre-commit>=4.2.0",
     "pyupgrade>=3.20.0",
+]
+mqtt = [
+    "aiomqtt>=2.4.0",
+    "pydantic>=2.11.5",
+    "pyyaml>=6.0.2",
 ]
 
 [tool.setuptools.packages.find]
