@@ -40,21 +40,35 @@ LOGGER = logging.getLogger(__name__)
 class Unit:
     def __init__(self, transport: Transport):
         self.transport = transport
-        self.knobs = {
-            "clean_filter_indicator": CleanFilterIndicatorKnob(transport),
-            "fan_speed": FanSpeedKnob(transport),
-            "operation_mode": OperationModeKnob(transport),
-            "power_state": PowerStateKnob(transport),
-            "sensors": SensorsKnob(transport),
-            "set_point": SetPointKnob(transport),
-        }
+
+        self.clean_filter_indicator = CleanFilterIndicatorKnob(transport)
+        self.fan_speed = FanSpeedKnob(transport)
+        self.operation_mode = OperationModeKnob(transport)
+        self.power_state = PowerStateKnob(transport)
+        self.sensors = SensorsKnob(transport)
+        self.set_point = SetPointKnob(transport)
+
         self.info: UnitInfo | None = None
 
     async def get_status(self) -> dict:
+        knobs = {
+            "clean_filter_indicator": self.clean_filter_indicator,
+            "fan_speed": self.fan_speed,
+            "operation_mode": self.operation_mode,
+            "power_state": self.power_state,
+            "sensors": self.sensors,
+            "set_point": self.set_point,
+        }
+
         ret = {}
-        for key, knob in self.knobs.items():
-            # FIXME: Handle exceptions and set None values
-            ret[key] = await knob.query()
+        for k, knob in knobs.items():
+            try:
+                value = await knob.query()
+            except Exception as e:
+                LOGGER.error(f"error while query '{k}' ({e!r})")
+                value = None
+
+            ret[k] = value
 
         return ret
 

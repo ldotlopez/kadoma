@@ -286,23 +286,23 @@ async def mqtt_to_kadoma(
             value = message.payload.decode()
             value = True if value == mqtt_info.payload_on else False
             LOGGER.info(f"Setting Unit power state to: {value}")
-            await unit.knobs["power_state"].update(value)
+            await unit.power_state.update(value)
 
         elif message.topic.value == mqtt_info.mode_command_topic:
             value = message.payload.decode()
             if value == "off":
-                await unit.knobs["power_state"].update(False)
+                await unit.power_state.update(False)
             else:
                 operation_mode = mqtt_info.ha_mode_as_unit_operation_mode(value)
-                await unit.knobs["power_state"].update(True)
-                await unit.knobs["operation_mode"].update(operation_mode)
+                await unit.power_state.update(True)
+                await unit.operation_mode.update(operation_mode)
 
         elif message.topic.value == mqtt_info.fan_mode_command_topic:
             value = message.payload.decode()
             fan_speed = mqtt_info.ha_fan_mode_as_unit_fan_speed(value)
 
             LOGGER.info(f"Setting Unit fan speed: {fan_speed}")
-            await unit.knobs["fan_speed"].update(cooling=fan_speed, heating=fan_speed)
+            await unit.fan_speed.update(cooling=fan_speed, heating=fan_speed)
 
         elif message.topic.value == mqtt_info.temperature_command_topic:
             value = message.payload.decode()
@@ -313,7 +313,7 @@ async def mqtt_to_kadoma(
                 continue
 
             LOGGER.info(f"Setting Unit target temperature: {value}")
-            await unit.knobs["set_point"].update(cooling=value, heating=value)
+            await unit.set_point.update(cooling=value, heating=value)
 
         else:
             LOGGER.warning(f"Unknow topic {message.topic.value}")
