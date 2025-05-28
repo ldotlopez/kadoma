@@ -17,8 +17,13 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
 # USA.
 
-
 import logging
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.DEBUG)
+
+__major_version__ = 0
+__minor_version__ = 0
+__micro_version__ = 0
+
+__version__ = f"{__major_version__}.{__minor_version__}.{__micro_version__}"
