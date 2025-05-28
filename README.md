@@ -1,3 +1,11 @@
+# Kadoma
+
+Library to control the thermostat Daikin BRC1H family.
+
+Based on PyMadoka
+
+Original README included until a new one is written.
+
 # PyMadoka
 
 This library has been written to control the thermostat Daikin BRC1H family without the need to use the mobile Madoka apps.
