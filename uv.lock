@@ -149,7 +149,6 @@ wheels = [
 
 [[package]]
 name = "kadoma"
-version = "0.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "bleak" },

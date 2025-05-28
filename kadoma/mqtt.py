@@ -33,11 +33,10 @@ import yaml
 
 from .cli import click_async_wrapper, print_error
 from .consts import UNIT_MANUFACTURER, UNIT_MODEL
-from .controller import Controller
 from .knobs import FanSpeedValue, OperationModeValue
 from .transport import get_transport
+from .unit import Unit, UnitInfo
 
-UnitInfo = dict[str, dict[str, str]]
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.DEBUG)
 try:
@@ -219,16 +218,16 @@ def slugify(s: str) -> str:
 
 
 async def unit_to_mqtt(
-    *, cfg: Config, controller: Controller, mqtt: aiomqtt.Client, mqtt_info: MqttUnit
+    *, cfg: Config, unit: Unit, mqtt: aiomqtt.Client, mqtt_info: MqttUnit
 ) -> None:
 
-    unit_info = await controller.get_info()
+    unit_info = await unit.get_info()
 
     discovery_payload = mqtt_info.discovery_payload(unit_info)
     await mqtt.publish(topic=mqtt_info.discovery_topic, payload=discovery_payload)
 
     while True:
-        status = await controller.get_status()
+        status = await unit.get_status()
 
         # Update mode
         power_state = status.get("power_state", False)
@@ -267,7 +266,7 @@ async def unit_to_mqtt(
 
 
 async def mqtt_to_kadoma(
-    *, cfg: Config, controller: Controller, mqtt: aiomqtt.Client, mqtt_info: MqttUnit
+    *, cfg: Config, unit: Unit, mqtt: aiomqtt.Client, mqtt_info: MqttUnit
 ):
 
     # operation_mode_repl = {"fan_only": "fan"}
@@ -286,26 +285,24 @@ async def mqtt_to_kadoma(
         if message.topic.value == mqtt_info.power_command_topic:
             value = message.payload.decode()
             value = True if value == mqtt_info.payload_on else False
-            LOGGER.info(f"Setting controller power state to: {value}")
-            await controller.knobs["power_state"].update(value)
+            LOGGER.info(f"Setting Unit power state to: {value}")
+            await unit.knobs["power_state"].update(value)
 
         elif message.topic.value == mqtt_info.mode_command_topic:
             value = message.payload.decode()
             if value == "off":
-                await controller.knobs["power_state"].update(False)
+                await unit.knobs["power_state"].update(False)
             else:
                 operation_mode = mqtt_info.ha_mode_as_unit_operation_mode(value)
-                await controller.knobs["power_state"].update(True)
-                await controller.knobs["operation_mode"].update(operation_mode)
+                await unit.knobs["power_state"].update(True)
+                await unit.knobs["operation_mode"].update(operation_mode)
 
         elif message.topic.value == mqtt_info.fan_mode_command_topic:
             value = message.payload.decode()
             fan_speed = mqtt_info.ha_fan_mode_as_unit_fan_speed(value)
 
-            LOGGER.info(f"Setting controller fan speed: {fan_speed}")
-            await controller.knobs["fan_speed"].update(
-                cooling=fan_speed, heating=fan_speed
-            )
+            LOGGER.info(f"Setting Unit fan speed: {fan_speed}")
+            await unit.knobs["fan_speed"].update(cooling=fan_speed, heating=fan_speed)
 
         elif message.topic.value == mqtt_info.temperature_command_topic:
             value = message.payload.decode()
@@ -315,8 +312,8 @@ async def mqtt_to_kadoma(
                 LOGGER.error(f"Invalid temperature value '{message.payload!r}'")
                 continue
 
-            LOGGER.info(f"Setting controller target temperature: {value}")
-            await controller.knobs["set_point"].update(cooling=value, heating=value)
+            LOGGER.info(f"Setting Unit target temperature: {value}")
+            await unit.knobs["set_point"].update(cooling=value, heating=value)
 
         else:
             LOGGER.warning(f"Unknow topic {message.topic.value}")
@@ -341,7 +338,7 @@ async def main(config: Path, address: str | None):
 
     async with aiomqtt.Client(cfg.mqtt.hostname, port=cfg.mqtt.port) as mqtt:
         async with get_transport(cfg.daemon.address) as transport:
-            unit = Controller(transport)
+            unit = Unit(transport)
 
             mqtt_info = MqttUnit(
                 cfg=cfg.mqtt,
@@ -350,10 +347,8 @@ async def main(config: Path, address: str | None):
             )
 
             await asyncio.gather(
-                unit_to_mqtt(cfg=cfg, mqtt=mqtt, controller=unit, mqtt_info=mqtt_info),
-                mqtt_to_kadoma(
-                    cfg=cfg, mqtt=mqtt, controller=unit, mqtt_info=mqtt_info
-                ),
+                unit_to_mqtt(cfg=cfg, mqtt=mqtt, unit=unit, mqtt_info=mqtt_info),
+                mqtt_to_kadoma(cfg=cfg, mqtt=mqtt, unit=unit, mqtt_info=mqtt_info),
             )
 
 

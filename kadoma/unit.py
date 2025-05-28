@@ -33,11 +33,11 @@ from .knobs import (
     SetPointKnob,
 )
 
-ControllerInfo = dict[str, dict[str, str]]
+UnitInfo = dict[str, dict[str, str]]
 LOGGER = logging.getLogger(__name__)
 
 
-class Controller:
+class Unit:
     def __init__(self, transport: Transport):
         self.transport = transport
         self.knobs = {
@@ -48,7 +48,7 @@ class Controller:
             "sensors": SensorsKnob(transport),
             "set_point": SetPointKnob(transport),
         }
-        self.info: ControllerInfo | None = None
+        self.info: UnitInfo | None = None
 
     async def get_status(self) -> dict:
         ret = {}
@@ -58,7 +58,7 @@ class Controller:
 
         return ret
 
-    async def get_info(self) -> ControllerInfo:
+    async def get_info(self) -> UnitInfo:
         if self.info is not None:
             return self.info
 

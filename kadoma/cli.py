@@ -33,7 +33,6 @@ from bleak.exc import BleakDeviceNotFoundError
 
 from kadoma.transport import get_transport
 
-from .controller import Controller
 from .knobs import (
     CleanFilterIndicatorKnob,
     FanSpeedKnob,
@@ -44,6 +43,7 @@ from .knobs import (
     SensorsKnob,
     SetPointKnob,
 )
+from .unit import Unit
 
 logging.basicConfig()
 
@@ -101,7 +101,7 @@ async def client():
 
 
 ##
-# Controller
+# Unit
 ##
 
 
@@ -111,7 +111,7 @@ async def client():
 async def get_status(address: str):
     async def g():
         async with get_transport(address) as transport:
-            ctlr = Controller(transport)
+            ctlr = Unit(transport)
             res = await ctlr.get_status()
             print(f"Response data: {res}")
 
@@ -124,7 +124,7 @@ async def get_status(address: str):
 async def get_info(address: str):
     async def g():
         async with get_transport(address) as transport:
-            ctlr = Controller(transport)
+            ctlr = Unit(transport)
             res = await ctlr.get_info()
             print(f"Response data: {res}")
 
