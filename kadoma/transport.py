@@ -246,7 +246,7 @@ def build_packet_parts(
     if params:
         params_subpck = bytearray()
         for k, v in params:
-            v_size = max(1, (v.bit_length() + 7) // 8)
+            v_size = get_int_size(v)  # max(1, (v.bit_length() + 7) // 8)
             params_subpck.append(k)
             params_subpck.append(v_size)
             params_subpck.extend(v.to_bytes(v_size, "big"))
@@ -282,11 +282,15 @@ def parse_packet(data: bytearray) -> tuple[CommandCode, CommandParams]:
     return cmd, params
 
 
-def get_command_id_from_packet(data: bytearray) -> int:
-    return int.from_bytes(data[3:5], "big")
-
-
 def chunkerize_packet(data, *, max_size: int) -> Iterable[bytearray]:
     yield from (
         bytearray(data[i : i + max_size]) for i in range(0, len(data), max_size)
     )
+
+
+def get_command_id_from_packet(data: bytearray) -> int:
+    return int.from_bytes(data[3:5], "big")
+
+
+def get_int_size(i: int) -> int:
+    return max(1, (i.bit_length() + 7) // 8)

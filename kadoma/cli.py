@@ -31,8 +31,6 @@ import click
 from bleak import BleakScanner
 from bleak.exc import BleakDeviceNotFoundError
 
-from kadoma.transport import get_transport
-
 from .knobs import (
     CleanFilterIndicatorKnob,
     FanSpeedKnob,
@@ -43,6 +41,7 @@ from .knobs import (
     SensorsKnob,
     SetPointKnob,
 )
+from .transport import get_int_size, get_transport, parse_packet
 from .unit import Unit
 
 logging.basicConfig()
@@ -260,3 +259,15 @@ async def get_clean_filter_indicator(address: str):
         knob = CleanFilterIndicatorKnob(transport)
         res = await knob.query()
         print(f"Response data: {res}")
+
+
+@cli.command
+@click.argument("hex_packet")
+@click_async_wrapper
+async def parse(hex_packet: str):
+    hex_packet = hex_packet.replace(":", "")
+    packet = bytearray.fromhex(hex_packet)
+    cmd, params = parse_packet(packet)
+    print(f"Command: {hex(cmd)}")
+    for k, v in params:
+        print(f"  key={hex(k)}, value={v}, size={get_int_size(v)}")
