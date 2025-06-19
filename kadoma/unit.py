@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import logging
 
-from kadoma.transport import Transport
+from bleak import BleakClient
+from bleak.backends.device import BLEDevice
 
 from .knobs import (
     CleanFilterIndicatorKnob,
@@ -32,23 +33,56 @@ from .knobs import (
     SensorsKnob,
     SetPointKnob,
 )
+from .transport import Transport
 
 UnitInfo = dict[str, dict[str, str]]
+
+
 LOGGER = logging.getLogger(__name__)
 
 
+class DeviceNotFoundError(Exception):
+    pass
+
+
+# async def get_ble_device(address: str, scanner: BleakScanner|None) -> BLEDevice:
+#     scanner = scanner or BleakScanner()
+#     devices = await scanner.discover()
+#     devices_by_addr = {x.address.upper(): x for x in devices}
+
+#     try:
+#         return devices_by_addr[address.upper()]
+#     except KeyError as e:
+#         raise DeviceNotFoundError(address) from e
+
+
 class Unit:
-    def __init__(self, transport: Transport):
-        self.transport = transport
-
-        self.clean_filter_indicator = CleanFilterIndicatorKnob(transport)
-        self.fan_speed = FanSpeedKnob(transport)
-        self.operation_mode = OperationModeKnob(transport)
-        self.power_state = PowerStateKnob(transport)
-        self.sensors = SensorsKnob(transport)
-        self.set_point = SetPointKnob(transport)
-
+    def __init__(self, ble_device_or_client: BLEDevice | BleakClient) -> None:
         self.info: UnitInfo | None = None
+
+        if isinstance(ble_device_or_client, BLEDevice):
+            client = BleakClient(ble_device_or_client)
+        elif isinstance(ble_device_or_client, BleakClient):
+            client = ble_device_or_client
+        else:
+            raise TypeError(ble_device_or_client)
+
+        self.transport = Transport(client)
+        self.clean_filter_indicator = CleanFilterIndicatorKnob(self.transport)
+        self.fan_speed = FanSpeedKnob(self.transport)
+        self.operation_mode = OperationModeKnob(self.transport)
+        self.power_state = PowerStateKnob(self.transport)
+        self.sensors = SensorsKnob(self.transport)
+        self.set_point = SetPointKnob(self.transport)
+
+    async def start(self):
+        await self.transport.start()
+        if self.info is None:
+            await self.get_info()
+
+    async def stop(self):
+        await self.transport.stop()
+        self.info = None
 
     async def get_status(self) -> dict:
         knobs = {

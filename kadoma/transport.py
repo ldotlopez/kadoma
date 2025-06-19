@@ -74,6 +74,7 @@ class Transport:
         self.client = client
         self.futures: dict[CommandCode, asyncio.Future] = {}
         self.partial: PartialPacket | None = None
+        self.is_started = False
 
     async def __aenter__(self):
         await self.start()
@@ -88,16 +89,33 @@ class Transport:
         await self.stop()
 
     async def start(self):
+        if self.is_started:
+            return
+
+        if not self.client.is_connected:
+            await self.client.connect()
+
         if self.client._backend.__class__.__name__ == "BleakClientBlueZDBus":  # type: ignore
             await self.client._backend._acquire_mtu()  # type: ignore
 
         await self.client.start_notify(NOTIFY_CHAR_UUID, self.notify_handler)
 
+        self.is_started = True
+
     async def stop(self):
+        if not self.is_started:
+            return
+
         await self.client.stop_notify(NOTIFY_CHAR_UUID)
+
+        if self.client.is_connected:
+            await self.client.disconnect()
+
         while self.futures:
             future = self.futures.pop(next(iter(self.futures.keys())))
             future.cancel()
+
+        self.is_started = False
 
     async def send_command(
         self, cmd: CommandCode, params: CommandParams | None = None

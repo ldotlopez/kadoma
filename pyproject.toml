@@ -25,7 +25,7 @@ keywords = [
 # license = "GPL-3.0-or-later"
 license = "MIT"
 # dynamic = ["version"]
-version = "0.0.1"
+version = "0.0.3+dev0"
 
 [project.urls]
 Homepage = "https://github.com/ldotlopez/kadoma"
