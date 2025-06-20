@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from bleak import BleakClient
@@ -57,7 +58,9 @@ class DeviceNotFoundError(Exception):
 
 
 class Unit:
-    def __init__(self, ble_device_or_client: BLEDevice | BleakClient) -> None:
+    def __init__(
+        self, ble_device_or_client: BLEDevice | BleakClient, delay: float = 0
+    ) -> None:
         self.info: UnitInfo | None = None
 
         if isinstance(ble_device_or_client, BLEDevice):
@@ -67,6 +70,7 @@ class Unit:
         else:
             raise TypeError(ble_device_or_client)
 
+        self.delay = delay
         self.transport = Transport(client)
         self.clean_filter_indicator = CleanFilterIndicatorKnob(self.transport)
         self.fan_speed = FanSpeedKnob(self.transport)
@@ -84,6 +88,11 @@ class Unit:
         await self.transport.stop()
         self.info = None
 
+    async def reset(self):
+        await self.stop()
+        await self._delay()
+        await self.start()
+
     async def get_status(self) -> dict:
         knobs = {
             "clean_filter_indicator": self.clean_filter_indicator,
@@ -99,10 +108,14 @@ class Unit:
             try:
                 value = await knob.query()
             except Exception as e:
-                LOGGER.error(f"error while query '{k}' ({e!r})")
-                value = None
+                LOGGER.error(
+                    f"error '{e.__class__.__module__}.{e.__class__.__name__}' while querying '{k}' ({e!r})"
+                )
+                raise
 
             ret[k] = value
+
+            await self._delay()
 
         return ret
 
@@ -138,8 +151,14 @@ class Unit:
                     + f" value='{value}'"
                 )
 
+                await self._delay()
+
             if sub_info:
                 info[service.description] = sub_info
 
         self.info = info
         return info
+
+    async def _delay(self) -> None:
+        if self.delay:
+            await asyncio.sleep(self.delay)

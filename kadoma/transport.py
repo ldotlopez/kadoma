@@ -92,8 +92,7 @@ class Transport:
         if self.is_started:
             return
 
-        if not self.client.is_connected:
-            await self.client.connect()
+        await self.client.connect()
 
         if self.client._backend.__class__.__name__ == "BleakClientBlueZDBus":  # type: ignore
             await self.client._backend._acquire_mtu()  # type: ignore
