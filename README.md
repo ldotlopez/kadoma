@@ -2,7 +2,7 @@
 
 Kadoma is a Python library designed to provide control over the Daikin BRC1H family thermostats. It represents an alternative approach to the original [PyMadoka](https://github.com/mduran80/pymadoka/) project.
 
-Original [README](README.pymadoka.md] included for reference.
+Original [README](README.pymadoka.md) included for reference.
 
 
 ## Why Kadoma? The rationale behind the fork and a rewrite
