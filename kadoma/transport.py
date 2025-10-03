@@ -25,6 +25,7 @@ import logging
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from types import TracebackType
+from typing import Self
 
 from bleak import BleakClient, BleakScanner
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -42,12 +43,12 @@ CommandParams = list[tuple[int, int]]
 
 @asynccontextmanager
 async def get_transport(
-    address_or_ble_device: str | BLEDevice,
+    address_or_ble_device: str | BLEDevice, timeout: float = BLUETOOTH_TIMEOUT
 ) -> AsyncIterator[Transport]:
     if isinstance(address_or_ble_device, str):
         LOGGER.debug(f"scanning for BLE device with address '{address_or_ble_device}'")
         ble_device = await BleakScanner.find_device_by_address(
-            address_or_ble_device, timeout=BLUETOOTH_TIMEOUT
+            address_or_ble_device, timeout=timeout
         )
         if ble_device is None:
             raise BleakDeviceNotFoundError(address_or_ble_device)
@@ -61,7 +62,7 @@ async def get_transport(
     else:
         raise TypeError(address_or_ble_device)
 
-    async with BleakClient(address_or_ble_device, timeout=BLUETOOTH_TIMEOUT) as client:
+    async with BleakClient(address_or_ble_device, timeout=timeout) as client:
         # Little hack to make property' name' available on the BleakClient
         setattr(client, "name", getattr(client, "name", address_or_ble_device.name))
 
@@ -70,13 +71,14 @@ async def get_transport(
 
 
 class Transport:
-    def __init__(self, client: BleakClient) -> None:
+    def __init__(self, client: BleakClient, timeout: float = BLUETOOTH_TIMEOUT) -> None:
         self.client = client
+        self.timeout = timeout
         self.futures: dict[CommandCode, asyncio.Future] = {}
         self.partial: PartialPacket | None = None
         self.is_started = False
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         await self.start()
         return self
 
@@ -88,11 +90,12 @@ class Transport:
     ) -> None:
         await self.stop()
 
-    async def start(self):
+    async def start(self) -> None:
         if self.is_started:
             return
 
-        await self.client.connect()
+        if not self.client.is_connected:
+            await self.client.connect(timeout=self.timeout)
 
         if self.client._backend.__class__.__name__ == "BleakClientBlueZDBus":  # type: ignore
             await self.client._backend._acquire_mtu()  # type: ignore
@@ -101,7 +104,7 @@ class Transport:
 
         self.is_started = True
 
-    async def stop(self):
+    async def stop(self) -> None:
         if not self.is_started:
             return
 
@@ -148,7 +151,7 @@ class Transport:
         LOGGER.debug("+- got response")
         return response
 
-    async def send_bytes(self, data: bytearray):
+    async def send_bytes(self, data: bytearray) -> None:
         LOGGER.debug(f"send packet: {data.hex(':')}")
 
         for idx, chunk in enumerate(self.packet_chunk_it(data)):
@@ -217,7 +220,7 @@ class PartialPacket:
         self.chunks: dict[int, bytearray] = {}
         self.add_chunk(chunk)
 
-    def add_chunk(self, chunk: bytearray):
+    def add_chunk(self, chunk: bytearray) -> None:
         if not chunk:
             raise ValueError("chunk can't be empty")
 

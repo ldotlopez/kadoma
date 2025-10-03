@@ -1,7 +1,5 @@
 import unittest
 
-import ipdb
-
 from kadoma.knobs import (
     CleanFilterIndicatorKnob,
     FanSpeedKnob,

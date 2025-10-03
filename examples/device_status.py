@@ -1,11 +1,13 @@
 import asyncio
-import sys
-import logging
 import json
-from pymadoka.controller import Controller
+import logging
+import sys
+
 from pymadoka.connection import discover_devices, force_device_disconnect
+from pymadoka.controller import Controller
 
 logger = logging.getLogger(__name__)
+
 
 async def main(madoka):
     try:
@@ -18,7 +20,7 @@ async def main(madoka):
     except Exception as e:
         logging.error(str(e))
         asyncio.get_event_loop().stop()
-   
+
 
 logging.basicConfig(level=logging.DEBUG)
 address = sys.argv[1]

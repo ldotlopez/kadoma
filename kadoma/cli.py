@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 from collections.abc import Awaitable, Callable
@@ -31,6 +32,7 @@ import click
 from bleak import BleakScanner
 from bleak.exc import BleakDeviceNotFoundError
 
+from .consts import BLUETOOTH_TIMEOUT
 from .knobs import (
     CleanFilterIndicatorKnob,
     FanSpeedKnob,
@@ -58,11 +60,15 @@ def click_async_wrapper(f: Callable) -> Any:
     return wrapper
 
 
-async def runner(fn: Awaitable):
+async def runner(
+    fn: Awaitable,
+):
     try:
         return await fn
     except BleakDeviceNotFoundError as e:
         print_error(f"{e.identifier}: device NOT found")
+    except TimeoutError:
+        print_error("timeout")
 
 
 def print_error(*args, **kwargs):
@@ -89,8 +95,38 @@ async def sender(address: str, payload: str):
         return -1
 
     async with get_transport(device) as transport:
-        resp = await transport.send_bytes(payloadb)
-        print(resp.hex(":"))
+        await transport.send_bytes(payloadb)
+
+
+##
+# Tools
+##
+@cli.command
+@click_async_wrapper
+async def scan():
+    for dev in await BleakScanner.discover(timeout=BLUETOOTH_TIMEOUT):
+        print(f"{dev.address} ({dev.name or '-'})")
+
+
+##
+# Unit (client sub command)
+##
+
+
+class ClientCommand(click.Command):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.params.append(
+            click.Option(("--address", "-a"), required=True, help="BLE device address")
+        )
+        self.params.append(
+            click.Option(
+                ("--timeout", "-t"),
+                required=False,
+                default=BLUETOOTH_TIMEOUT,
+                help="Bluetooth timeout",
+            )
+        )
 
 
 @cli.group()
@@ -99,33 +135,26 @@ async def client():
     pass
 
 
-##
-# Unit
-##
-
-
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click_async_wrapper
-async def get_status(address: str):
+async def get_status(address: str, timeout: int):
     async def g():
-        async with get_transport(address) as transport:
-            ctlr = Unit(transport)
-            res = await ctlr.get_status()
+        async with get_transport(address, timeout=timeout) as transport:
+            unit = Unit(transport)
+            res = await unit.get_status()
             print(f"Response data: {res}")
 
     return await runner(g())
 
 
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click_async_wrapper
-async def get_info(address: str):
+async def get_info(address: str, timeout: int):
     async def g():
-        async with get_transport(address) as transport:
-            ctlr = Unit(transport)
-            res = await ctlr.get_info()
-            print(f"Response data: {res}")
+        async with get_transport(address, timeout=timeout) as transport:
+            unit = Unit(transport)
+            res = await unit.get_info()
+            print(json.dumps(res, indent=2))
 
     return await runner(g())
 
@@ -135,12 +164,11 @@ async def get_info(address: str):
 ##
 
 
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click_async_wrapper
-async def get_power_state(address: str):
+async def get_power_state(address: str, timeout: int):
     async def g():
-        async with get_transport(address) as transport:
+        async with get_transport(address, timeout=timeout) as transport:
             knob = PowerStateKnob(transport)
             res = await knob.query()
             print(f"Response data: {res}")
@@ -148,33 +176,30 @@ async def get_power_state(address: str):
     return await runner(g())
 
 
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click.argument("state", type=click.Choice(["ON", "OFF"]))
 @click_async_wrapper
-async def set_power_state(address: str, state: str):
-    async with get_transport(address) as transport:
+async def set_power_state(address: str, state: str, timeout: int):
+    async with get_transport(address, timeout=timeout) as transport:
         knob = PowerStateKnob(transport)
         res = await knob.update(state=True if state == "ON" else False)
         print(f"Response data: {res}")
 
 
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click_async_wrapper
-async def get_operation_mode(address: str):
-    async with get_transport(address) as transport:
+async def get_operation_mode(address: str, timeout: int):
+    async with get_transport(address, timeout=timeout) as transport:
         knob = OperationModeKnob(transport)
         res = await knob.query()
         print(f"Response data: {res}")
 
 
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click.argument("mode", type=click.Choice([x.name for x in OperationModeValue]))
 @click_async_wrapper
-async def set_operation_mode(address: str, mode: str):
-    async with get_transport(address) as transport:
+async def set_operation_mode(address: str, timeout: int, mode: str):
+    async with get_transport(address, timeout=timeout) as transport:
         knob = OperationModeKnob(transport)
         res = await knob.update(mode=OperationModeValue[mode])
         print(f"Response data: {res}")
@@ -185,23 +210,23 @@ async def set_operation_mode(address: str, mode: str):
 ##
 
 
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click_async_wrapper
-async def get_fan_speed(address: str):
-    async with get_transport(address) as transport:
+async def get_fan_speed(address: str, timeout: int):
+    async with get_transport(address, timeout=timeout) as transport:
         knob = FanSpeedKnob(transport)
         res = await knob.query()
         print(f"Response data: {res}")
 
 
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click.argument("cooling-speed", type=click.Choice([x.name for x in FanSpeedValue]))
 @click.argument("heating-speed", type=click.Choice([x.name for x in FanSpeedValue]))
 @click_async_wrapper
-async def set_fan_speed(address: str, cooling_speed: str, heating_speed: str):
-    async with get_transport(address) as transport:
+async def set_fan_speed(
+    address: str, timeout: int, cooling_speed: str, heating_speed: str
+):
+    async with get_transport(address, timeout=timeout) as transport:
         knob = FanSpeedKnob(transport)
         res = await knob.update(
             cooling=FanSpeedValue[cooling_speed],
@@ -213,23 +238,21 @@ async def set_fan_speed(address: str, cooling_speed: str, heating_speed: str):
 ##
 # set point
 ##
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click_async_wrapper
-async def get_set_point(address: str):
-    async with get_transport(address) as transport:
+async def get_set_point(address: str, timeout: float):
+    async with get_transport(address, timeout=timeout) as transport:
         knob = SetPointKnob(transport)
         res = await knob.query()
         print(f"Response data: {res}")
 
 
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click.argument("cooling", type=int)
 @click.argument("heating", type=int)
 @click_async_wrapper
-async def set_set_point(address: str, cooling: int, heating: int):
-    async with get_transport(address) as transport:
+async def set_set_point(address: str, timeout: float, cooling: int, heating: int):
+    async with get_transport(address, timeout=timeout) as transport:
         knob = SetPointKnob(transport)
         res = await knob.update(cooling, heating)
         print(f"Response data: {res}")
@@ -238,11 +261,10 @@ async def set_set_point(address: str, cooling: int, heating: int):
 ##
 # sensors
 ##
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click_async_wrapper
-async def get_sensors(address: str):
-    async with get_transport(address) as transport:
+async def get_sensors(address: str, timeout: float):
+    async with get_transport(address, timeout=timeout) as transport:
         knob = SensorsKnob(transport)
         res = await knob.query()
         print(f"Response data: {res}")
@@ -251,17 +273,16 @@ async def get_sensors(address: str):
 ##
 # clean filter indicator
 ##
-@client.command
-@click.option("--address", "-a", required=True, help="BLE device address")
+@client.command(cls=ClientCommand)
 @click_async_wrapper
-async def get_clean_filter_indicator(address: str):
-    async with get_transport(address) as transport:
+async def get_clean_filter_indicator(address: str, timeout: float):
+    async with get_transport(address, timeout=timeout) as transport:
         knob = CleanFilterIndicatorKnob(transport)
         res = await knob.query()
         print(f"Response data: {res}")
 
 
-@cli.command
+@client.command(cls=ClientCommand)
 @click.argument("hex_packet")
 @click_async_wrapper
 async def parse(hex_packet: str):

@@ -32,14 +32,13 @@ from .knobs import (
 )
 from .unit import Unit, UnitInfo
 
-LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel(logging.DEBUG)
-
 __major_version__ = 0
 __minor_version__ = 0
-__micro_version__ = "3+dev0"
-
-__version__ = f"{__major_version__}.{__minor_version__}.{__micro_version__}"
+__micro_version__ = 3
+__extra_version__ = ""  # -dev0, -rc1, etc.
+__version__ = (
+    f"{__major_version__}.{__minor_version__}.{__micro_version__}{__extra_version__}"
+)
 
 __all__ = [
     "CleanFilterIndicatorKnob",

@@ -23,9 +23,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from bleak import BleakClient
-from bleak.backends.device import BLEDevice
-
 from .knobs import (
     CleanFilterIndicatorKnob,
     FanSpeedKnob,
@@ -58,20 +55,39 @@ class DeviceNotFoundError(Exception):
 
 
 class Unit:
+    # def __init__(
+    #     self,
+    #     ble_device_or_client_: BLEDevice | BleakClient | None = None,
+    #     transport: Transport | None = None,
+    #     delay: float = 0,
+    #     timeout: float = BLUETOOTH_TIMEOUT,
+    # ) -> None:
+    #     self.info: UnitInfo | None = None
+
+    #     if isinstance(ble_device_or_client, BLEDevice):
+    #         client = BleakClient(ble_device_or_client)
+    #     elif isinstance(ble_device_or_client, BleakClient):
+    #         client = ble_device_or_client
+    #     else:
+    #         raise TypeError(ble_device_or_client)
+
+    #     self.delay = delay
+    #     self.transport = Transport(client, timeout=timeout)
+    #     self.clean_filter_indicator = CleanFilterIndicatorKnob(self.transport)
+    #     self.fan_speed = FanSpeedKnob(self.transport)
+    #     self.operation_mode = OperationModeKnob(self.transport)
+    #     self.power_state = PowerStateKnob(self.transport)
+    #     self.sensors = SensorsKnob(self.transport)
+    #     self.set_point = SetPointKnob(self.transport)
     def __init__(
-        self, ble_device_or_client: BLEDevice | BleakClient, delay: float = 0
+        self,
+        transport: Transport,
+        delay: float = 0,
     ) -> None:
         self.info: UnitInfo | None = None
 
-        if isinstance(ble_device_or_client, BLEDevice):
-            client = BleakClient(ble_device_or_client)
-        elif isinstance(ble_device_or_client, BleakClient):
-            client = ble_device_or_client
-        else:
-            raise TypeError(ble_device_or_client)
-
         self.delay = delay
-        self.transport = Transport(client)
+        self.transport = transport
         self.clean_filter_indicator = CleanFilterIndicatorKnob(self.transport)
         self.fan_speed = FanSpeedKnob(self.transport)
         self.operation_mode = OperationModeKnob(self.transport)
@@ -109,7 +125,8 @@ class Unit:
                 value = await knob.query()
             except Exception as e:
                 LOGGER.error(
-                    f"error '{e.__class__.__module__}.{e.__class__.__name__}' while querying '{k}' ({e!r})"
+                    f"error '{e.__class__.__module__}.{e.__class__.__name__}' "
+                    f"while querying '{k}' ({e!r})"
                 )
                 raise
 

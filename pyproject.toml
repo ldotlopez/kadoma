@@ -24,8 +24,9 @@ keywords = [
 # Keep original license for now
 # license = "GPL-3.0-or-later"
 license = "MIT"
+
 # dynamic = ["version"]
-version = "0.0.3+dev0"
+version = "0.0.3"
 
 [project.urls]
 Homepage = "https://github.com/ldotlopez/kadoma"
@@ -57,8 +58,8 @@ mqtt = [
     "pyyaml>=6.0.2",
 ]
 
-# [tool.setuptools.dynamic]
-# version = {attr = "kadoma.__version__"}
+[tool.setuptools.dynamic]
+version = {attr = "kadoma.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["kadoma"]
